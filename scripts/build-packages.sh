@@ -115,16 +115,18 @@ if [[ ! -d "${build_root}/usr" ]]; then
   log "extracting package build root"
   rm -rf "${build_root}"
   install -d "${build_root}"
-  install -d "${cache_dir}" "${repo_dir}" "$(dirname "${build_root}")"
-  ensure_alarm_rootfs "${rootfs_tar}"
-  extract_alarm_rootfs_without_stock_kernel_firmware "${rootfs_tar}" "${build_root}"
-else
-  install -d "${cache_dir}" "${repo_dir}" "$(dirname "${build_root}")"
-  if [[ -f "${rootfs_tar}" ]]; then
-    verify_alarm_rootfs "${rootfs_tar}" || \
-      die "cached Arch Linux ARM rootfs failed verification; remove ${rootfs_tar} before recreating the package build root"
-  fi
-fi
+	  install -d "${cache_dir}" "${repo_dir}" "$(dirname "${build_root}")"
+	  ensure_alarm_rootfs "${rootfs_tar}"
+	  extract_alarm_rootfs_without_stock_kernel_firmware "${rootfs_tar}" "${build_root}"
+	  repair_alarm_usrmerge_links "${build_root}"
+	else
+	  install -d "${cache_dir}" "${repo_dir}" "$(dirname "${build_root}")"
+	  if [[ -f "${rootfs_tar}" ]]; then
+	    verify_alarm_rootfs "${rootfs_tar}" || \
+	      die "cached Arch Linux ARM rootfs failed verification; remove ${rootfs_tar} before recreating the package build root"
+	  fi
+	  repair_alarm_usrmerge_links "${build_root}"
+	fi
 
 cp /usr/bin/qemu-aarch64-static "${build_root}/usr/bin/"
 configure_chroot_resolver "${build_root}"

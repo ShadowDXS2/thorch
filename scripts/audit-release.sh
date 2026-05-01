@@ -29,6 +29,14 @@ require_file() {
 }
 
 source_files() {
+  if [[ -d "${root}/.git" ]]; then
+    (
+      cd "${root}"
+      git ls-files --cached --others --exclude-standard
+    ) | sed "s#^#${root}/#" | sort
+    return
+  fi
+
   find "${root}" \
     \( -path "${root}/.git" \
     -o -path "${root}/build" \
@@ -49,6 +57,19 @@ source_files() {
     ! -name '*.img.zst' \
     ! -name 'linux-*.tar.*' \
     -print | sort
+}
+
+is_git_ignored_untracked() {
+  local rel="$1"
+
+  [[ -d "${root}/.git" ]] || return 1
+  (
+    cd "${root}"
+    if git ls-files --error-unmatch -- "${rel}" >/dev/null 2>&1; then
+      exit 1
+    fi
+    git check-ignore -q -- "${rel}"
+  )
 }
 
 note "checking release metadata"
@@ -77,9 +98,10 @@ for rel in \
   packages/*/pkg \
   packages/*/src; do
   for path in "${root}"/${rel}; do
-    [[ -e "${path}" ]] || continue
-    rel_path="${path#${root}/}"
-    [[ -z "${seen_artifacts[${rel_path}]:-}" ]] || continue
+	    [[ -e "${path}" ]] || continue
+	    rel_path="${path#${root}/}"
+	    is_git_ignored_untracked "${rel_path}" && continue
+	    [[ -z "${seen_artifacts[${rel_path}]:-}" ]] || continue
     seen_artifacts["${rel_path}"]=1
     artifact_paths+=("${rel_path}")
   done

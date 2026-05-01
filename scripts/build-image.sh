@@ -163,10 +163,11 @@ remove_stock_firmware() {
 log "preparing image rootfs"
 rm -rf "${boot_stage}" "${boot_img}" "${root_img}"
 if [[ "${reuse_rootfs}" -eq 0 ]]; then
-  rm -rf "${rootfs_dir}"
-  install -d "${rootfs_dir}"
-  extract_alarm_rootfs_without_stock_kernel_firmware "${rootfs_tar}" "${rootfs_dir}"
-  cp /usr/bin/qemu-aarch64-static "${rootfs_dir}/usr/bin/"
+	  rm -rf "${rootfs_dir}"
+	  install -d "${rootfs_dir}"
+	  extract_alarm_rootfs_without_stock_kernel_firmware "${rootfs_tar}" "${rootfs_dir}"
+	  repair_alarm_usrmerge_links "${rootfs_dir}"
+	  cp /usr/bin/qemu-aarch64-static "${rootfs_dir}/usr/bin/"
   configure_chroot_resolver "${rootfs_dir}"
   configure_alarm_pacman "${rootfs_dir}"
   mask_chroot_stock_kernel_hooks "${rootfs_dir}"
@@ -185,6 +186,7 @@ if [[ "${reuse_rootfs}" -eq 0 ]]; then
 else
   [[ -x "${rootfs_dir}/usr/bin/qemu-aarch64-static" ]] || cp /usr/bin/qemu-aarch64-static "${rootfs_dir}/usr/bin/"
   [[ -x "${rootfs_dir}/usr/bin/pacman" && -d "${rootfs_dir}/var/lib/pacman" ]] || die "cannot reuse missing rootfs: ${rootfs_dir}"
+  repair_alarm_usrmerge_links "${rootfs_dir}"
   log "reusing populated rootfs ${rootfs_dir}"
   stage_image_packages
   log "refreshing local Thorch packages in reused rootfs"

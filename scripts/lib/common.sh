@@ -162,6 +162,31 @@ extract_alarm_rootfs_without_stock_kernel_firmware() {
     --exclude 'var/lib/pacman/local/linux-firmware*'
 }
 
+repair_alarm_usrmerge_links() {
+  local rootfs="$1"
+
+  ensure_usrmerge_link() {
+    local path="$1"
+    local target="$2"
+
+    if [[ -L "${path}" || ! -e "${path}" ]]; then
+      ln -sfn "${target}" "${path}"
+      return
+    fi
+    if [[ -d "${path}" && -z "$(find "${path}" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
+      rmdir "${path}"
+      ln -s "${target}" "${path}"
+      return
+    fi
+  }
+
+  install -d "${rootfs}/usr"
+  ensure_usrmerge_link "${rootfs}/lib" usr/lib
+  ensure_usrmerge_link "${rootfs}/bin" usr/bin
+  ensure_usrmerge_link "${rootfs}/sbin" usr/bin
+  ensure_usrmerge_link "${rootfs}/lib64" usr/lib
+}
+
 validate_rocknix_kernel_provenance() {
   local kernel_dir="$1"
   local provenance="${kernel_dir}/PROVENANCE"
