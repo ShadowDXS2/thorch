@@ -305,7 +305,7 @@ data = replace_tokens(data, {
 
 config = data.setdefault("Config", {})
 config.update({
-    "ServerSocketPath": str(base / "Server"),
+    "ServerSocketPath": "",
     "ThunkHostLibs": str(tool_dir / "usr/lib/aarch64-linux-gnu/fex-emu/HostThunks"),
     "ThunkGuestLibs": str(tool_dir / "usr/share/fex-emu/GuestThunks"),
 })

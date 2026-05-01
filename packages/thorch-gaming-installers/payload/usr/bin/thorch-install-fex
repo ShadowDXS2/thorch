@@ -120,7 +120,7 @@ for path in (base / "Config.json", base / "Config" / "Config.json"):
     config = data.setdefault("Config", {})
     config.update({
         "RootFS": rootfs_name,
-        "ServerSocketPath": str(base / "Server"),
+        "ServerSocketPath": "",
         "ThunkHostLibs": str(host),
         "ThunkGuestLibs": str(guest),
         "TSOEnabled": "1",
@@ -146,16 +146,15 @@ PY
 }
 
 write_fex_config_defaults() {
-  local config_file="$1" rootfs_name="$2" server_dir="$3"
+  local config_file="$1" rootfs_name="$2"
 
-  python - "${config_file}" "${rootfs_name}" "${server_dir}" <<'PY'
+  python - "${config_file}" "${rootfs_name}" <<'PY'
 import json
 import pathlib
 import sys
 
 path = pathlib.Path(sys.argv[1])
 rootfs_name = sys.argv[2]
-server_dir = sys.argv[3]
 template = pathlib.Path("/usr/config/fex-emu/Config.json")
 if not template.exists():
     template = pathlib.Path("/usr/share/thorch/fex-emu/Config.json")
@@ -166,7 +165,7 @@ except json.JSONDecodeError:
 config = data.setdefault("Config", {})
 config.update({
     "RootFS": rootfs_name,
-    "ServerSocketPath": server_dir,
+    "ServerSocketPath": "",
     "ThunkHostLibs": "/usr/lib/fex-emu/HostThunks",
     "ThunkGuestLibs": "/usr/share/fex-emu/GuestThunks",
     "TSOEnabled": "1",
@@ -265,9 +264,7 @@ if [[ -d "${config_src}" ]]; then
   cp -a "${config_src}/." "${config_dst}/"
 fi
 
-server_dir="${HOME}/.local/share/fex-emu/Server"
-mkdir -p "${server_dir}"
-write_fex_config_defaults "${config_dst}/Config.json" "ArchLinux.sqsh" "${server_dir}"
+write_fex_config_defaults "${config_dst}/Config.json" "ArchLinux.sqsh"
 
 if command -v FEXRootFSFetcher >/dev/null 2>&1; then
   rootfs_dir="${FEX_ROOTFS_DIR:-${HOME}/.local/share/fex-emu/RootFS}"
@@ -297,7 +294,7 @@ else
 fi
 
 if [[ -f "${config_dst}/Config.json" && -d "${rootfs_tree}" ]]; then
-  write_fex_config_defaults "${config_dst}/Config.json" "ArchLinux" "${server_dir}"
+  write_fex_config_defaults "${config_dst}/Config.json" "ArchLinux"
 fi
 
 if command -v FEXServer >/dev/null 2>&1; then

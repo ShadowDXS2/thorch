@@ -80,12 +80,11 @@ ensure_fex_server() {
 }
 
 ensure_fex_config() {
-  local config_dir config_file server_dir
+  local config_dir config_file
 
   config_dir="${HOME}/.config/fex-emu"
   config_file="${config_dir}/Config.json"
-  server_dir="${HOME}/.local/share/fex-emu/Server"
-  mkdir -p "${config_dir}" "${server_dir}"
+  mkdir -p "${config_dir}"
 
   if [[ ! -f "${config_file}" && -f /usr/config/fex-emu/Config.json ]]; then
     cp -f /usr/config/fex-emu/Config.json "${config_file}"
@@ -94,7 +93,7 @@ ensure_fex_config() {
   fi
   [[ -f "${config_file}" ]] || return 0
 
-  python - "${config_file}" "${server_dir}" <<'PY'
+  python - "${config_file}" <<'PY'
 import json
 import pathlib
 import sys
@@ -109,7 +108,7 @@ except json.JSONDecodeError:
     data = {}
 config = data.setdefault("Config", {})
 config.update({
-    "ServerSocketPath": sys.argv[2],
+    "ServerSocketPath": "",
     "ThunkHostLibs": "/usr/lib/fex-emu/HostThunks",
     "ThunkGuestLibs": "/usr/share/fex-emu/GuestThunks",
     "TSOEnabled": "1",
@@ -278,7 +277,7 @@ for path in (base / "Config.json", base / "Config" / "Config.json"):
     config = data.setdefault("Config", {})
     config.update({
         "RootFS": rootfs_name,
-        "ServerSocketPath": str(base / "Server"),
+        "ServerSocketPath": "",
         "ThunkHostLibs": str(host),
         "ThunkGuestLibs": str(guest),
         "TSOEnabled": "1",
