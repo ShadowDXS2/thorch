@@ -117,9 +117,10 @@ make build
 ```
 
 The Arch Linux ARM rootfs tarball is verified before extraction. By default the
-builder downloads the matching detached `.sig` and verifies it with the host
-pacman keyring; alternatively set `ALARM_ROOTFS_SHA256` to a pinned tarball
-hash for hermetic builds.
+builder downloads the matching detached `.sig`, fetches the pinned Arch Linux
+ARM signing key into a temporary GPG keyring if needed, and verifies the
+signature. Alternatively set `ALARM_ROOTFS_SHA256` to a pinned tarball hash for
+hermetic builds.
 
 For package/default/service iteration after one full build, use the fast path.
 It rebuilds local Thorch packages, refreshes the cached rootfs, regenerates boot

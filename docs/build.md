@@ -143,6 +143,8 @@ pkexec ./scripts/write-image.sh output/thorch-arch-aarch64.img /dev/sdX
 - `THORCH_IMAGE_PACKAGES`: local packages installed into the image.
 - `ALARM_ROOTFS_URL`: Arch Linux ARM aarch64 rootfs URL.
 - `ALARM_ROOTFS_SIG_URL`: detached signature URL for the Arch Linux ARM rootfs.
+- `ALARM_ROOTFS_SIGNING_KEYS`: pinned trusted rootfs signing fingerprints.
+- `ALARM_ROOTFS_KEYSERVER`: keyserver used to fetch missing pinned signing keys.
 - `ALARM_ROOTFS_SHA256`: pinned Arch Linux ARM rootfs hash, used instead of signature verification when set.
 - `ALARM_MIRROR`: Arch Linux ARM pacman mirror base.
 - `ROCKNIX_KERNEL_ALLOW_UNVERIFIED`: set to `1` only for local experiments that intentionally import an unverified ROCKNIX image.

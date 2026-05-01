@@ -65,6 +65,7 @@ parse_size_bytes() {
 verify_alarm_rootfs() {
   local rootfs_tar="$1"
   local sig_file="${rootfs_tar}.sig"
+  local gpg_home status_file key keyring signer
 
   if [[ -n "${ALARM_ROOTFS_SHA256:-}" ]]; then
     require_cmd sha256sum
@@ -77,9 +78,57 @@ verify_alarm_rootfs() {
   [[ -n "${ALARM_ROOTFS_SIG_URL:-}" ]] || \
     die "ALARM_ROOTFS_SIG_URL is required unless ALARM_ROOTFS_SHA256 is set"
 
-  require_cmd pacman-key
+  require_cmd gpg
   curl -fL --retry 3 -o "${sig_file}" "${ALARM_ROOTFS_SIG_URL}"
-  pacman-key --verify "${sig_file}" "${rootfs_tar}"
+  [[ -n "${ALARM_ROOTFS_SIGNING_KEYS:-}" ]] || \
+    die "ALARM_ROOTFS_SIGNING_KEYS is required unless ALARM_ROOTFS_SHA256 is set"
+
+  gpg_home="$(mktemp -d /tmp/thorch-alarm-gnupg.XXXXXX)"
+  status_file="$(mktemp /tmp/thorch-alarm-gpg-status.XXXXXX)"
+  chmod 0700 "${gpg_home}"
+
+  keyring=/usr/share/pacman/keyrings/archlinuxarm.gpg
+  if [[ -r "${keyring}" ]]; then
+    gpg --homedir "${gpg_home}" --batch --quiet --import "${keyring}" >/dev/null
+  fi
+
+  for key in ${ALARM_ROOTFS_SIGNING_KEYS}; do
+    key="$(printf '%s' "${key}" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')"
+    [[ "${key}" =~ ^[0-9A-F]{40}$ ]] || {
+      rm -rf "${gpg_home}" "${status_file}"
+      die "invalid ALARM_ROOTFS_SIGNING_KEYS fingerprint: ${key}"
+    }
+    if ! gpg --homedir "${gpg_home}" --batch --list-keys "${key}" >/dev/null 2>&1; then
+      if ! gpg --homedir "${gpg_home}" --batch --keyserver "${ALARM_ROOTFS_KEYSERVER}" --recv-keys "${key}"; then
+        rm -rf "${gpg_home}" "${status_file}"
+        die "failed to fetch pinned Arch Linux ARM rootfs signing key ${key} from ${ALARM_ROOTFS_KEYSERVER}"
+      fi
+    fi
+    gpg --homedir "${gpg_home}" --batch --with-colons --fingerprint "${key}" |
+      awk -F: -v key="${key}" '$1 == "fpr" && $10 == key { found=1 } END { exit(found ? 0 : 1) }' || {
+        rm -rf "${gpg_home}" "${status_file}"
+        die "failed to import pinned Arch Linux ARM rootfs signing key: ${key}"
+      }
+  done
+
+  if ! gpg --homedir "${gpg_home}" --batch --status-fd 1 --verify "${sig_file}" "${rootfs_tar}" >"${status_file}" 2>&1; then
+    cat "${status_file}" >&2
+    rm -rf "${gpg_home}" "${status_file}"
+    return 1
+  fi
+
+  signer="$(awk '$1 == "[GNUPG:]" && $2 == "VALIDSIG" { print toupper($3); exit }' "${status_file}")"
+  for key in ${ALARM_ROOTFS_SIGNING_KEYS}; do
+    key="$(printf '%s' "${key}" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')"
+    if [[ "${signer}" == "${key}" ]]; then
+      rm -rf "${gpg_home}" "${status_file}"
+      return 0
+    fi
+  done
+
+  cat "${status_file}" >&2
+  rm -rf "${gpg_home}" "${status_file}"
+  return 1
 }
 
 download_alarm_rootfs() {
