@@ -53,7 +53,7 @@ while [[ "$#" -gt 0 ]]; do
 done
 
 [[ "${EUID}" -eq 0 ]] || die "this command must run as root"
-require_cmd blockdev findfs findmnt lsblk partprobe parted resize2fs sfdisk udevadm
+require_cmd blockdev findfs findmnt lsblk partprobe resize2fs sfdisk udevadm
 
 root_source="$(findmnt -no SOURCE /)"
 root_fstype="$(findmnt -no FSTYPE /)"
@@ -102,10 +102,9 @@ fi
 
 echo "Repairing GPT backup header if the card is larger than the image..."
 sfdisk --relocate gpt-bak-std "${disk}" >/dev/null 2>&1 || true
-parted -s -f "${disk}" print >/dev/null
 
 echo "Growing partition ${partno} to the end of ${disk}..."
-parted -s -a optimal "${disk}" unit s resizepart "${partno}" 100%
+printf ',+\n' | sfdisk --no-reread -N "${partno}" "${disk}"
 
 partprobe "${disk}" >/dev/null 2>&1 || true
 udevadm settle

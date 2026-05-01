@@ -44,7 +44,7 @@ while [[ "$#" -gt 0 ]]; do
 done
 
 require_root
-require_cmd bsdtar curl qemu-aarch64-static repo-add rsync systemd-nspawn
+require_cmd bsdtar curl qemu-aarch64-static repo-add rsync systemd-nspawn vercmp
 
 root="$(repo_root)"
 if [[ "${THORCH_BUILD_DIR}" = /* ]]; then
@@ -155,6 +155,41 @@ remove_stock_firmware() {
   run_chroot "installed_stock=\$(pacman -Qq ${stock_kernel_firmware[*]} 2>/dev/null || true); [[ -z \"\${installed_stock}\" ]] || pacman -Rdd --noconfirm \${installed_stock}"
 }
 
+pkginfo_value() {
+  local pkgfile="$1" key="$2"
+  bsdtar -xOqf "${pkgfile}" .PKGINFO | awk -F ' = ' -v key="${key}" '$1 == key {print $2; exit}'
+}
+
+prune_stale_repo_packages() {
+  local -A best_file=()
+  local -A best_version=()
+  local file pkgname pkgver current cmp
+
+  shopt -s nullglob
+  for file in "${repo_dir}"/*.pkg.tar.*; do
+    pkgname="$(pkginfo_value "${file}" pkgname)"
+    pkgver="$(pkginfo_value "${file}" pkgver)"
+    [[ -n "${pkgname}" && -n "${pkgver}" ]] || die "unable to read package metadata from ${file}"
+
+    current="${best_file[${pkgname}]:-}"
+    if [[ -z "${current}" ]]; then
+      best_file["${pkgname}"]="${file}"
+      best_version["${pkgname}"]="${pkgver}"
+      continue
+    fi
+
+    cmp="$(vercmp "${pkgver}" "${best_version[${pkgname}]}")"
+    if (( cmp > 0 )) || { (( cmp == 0 )) && [[ "${file}" -nt "${current}" ]]; }; then
+      rm -f "${current}" "${current}.sig"
+      best_file["${pkgname}"]="${file}"
+      best_version["${pkgname}"]="${pkgver}"
+    else
+      rm -f "${file}" "${file}.sig"
+    fi
+  done
+  shopt -u nullglob
+}
+
 sync_input_dir() {
   local rel="$1"
   local src="${root}/${rel}"
@@ -193,5 +228,7 @@ for pkg in "${packages[@]}"; do
 done
 
 log "updating local pacman repository"
+prune_stale_repo_packages
+rm -f "${repo_dir}/thorch.db"* "${repo_dir}/thorch.files"*
 repo-add "${repo_dir}/thorch.db.tar.gz" "${repo_dir}"/*.pkg.tar.* >/dev/null
 log "packages available in ${repo_dir}"
