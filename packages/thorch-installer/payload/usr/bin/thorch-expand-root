@@ -8,7 +8,7 @@ usage: thorch-expand-root [--force] [--yes]
 Expand the currently booted ext4 root partition to the end of its parent block
 device, then grow the mounted filesystem online.
 
-  --force   allow running when the root device is not marked removable
+  --force   override removable/Thorch SD root safety checks
   --yes     do not ask for interactive confirmation
 EOF
 }
@@ -27,6 +27,40 @@ require_cmd() {
     fi
   done
   [[ "${missing}" -eq 0 ]] || exit 1
+}
+
+resolve_block_source() {
+  local src="$1"
+  src="${src%%[*}"
+  if [[ "${src}" == UUID=* || "${src}" == LABEL=* || "${src}" == PARTUUID=* || "${src}" == PARTLABEL=* ]]; then
+    src="$(findfs "${src}")"
+  fi
+  readlink -f "${src}"
+}
+
+is_thorch_sd_root() {
+  local root_dev="$1" disk_name="$2" disk="$3" boot_source boot_dev boot_parent part_count root_label boot_label
+
+  # Thor's SD slot can report RM=0. Accept only the expected Thorch SD image
+  # shape as the fallback: root on mmcblk*, THORCH_ROOT root label, and a
+  # ROCKNIX /boot partition on the same two-partition mmc disk.
+  [[ "${disk_name}" == mmcblk* ]] || return 1
+  part_count="$(lsblk -nrpo TYPE "${disk}" 2>/dev/null | awk '$1 == "part" { count++ } END { print count + 0 }')"
+  [[ "${part_count}" == "2" ]] || return 1
+
+  root_label="$(blkid -s LABEL -o value "${root_dev}" 2>/dev/null || true)"
+  [[ "${root_label}" == "THORCH_ROOT" ]] || return 1
+
+  boot_source="$(findmnt -no SOURCE /boot 2>/dev/null || true)"
+  [[ -n "${boot_source}" ]] || return 1
+  boot_dev="$(resolve_block_source "${boot_source}" 2>/dev/null || true)"
+  [[ -b "${boot_dev}" ]] || return 1
+
+  boot_parent="$(lsblk -no PKNAME "${boot_dev}" 2>/dev/null | head -n1 | tr -d '[:space:]')"
+  [[ "${boot_parent}" == "${disk_name}" ]] || return 1
+
+  boot_label="$(blkid -s LABEL -o value "${boot_dev}" 2>/dev/null || true)"
+  [[ "${boot_label}" == "ROCKNIX" ]]
 }
 
 force=0
@@ -53,16 +87,13 @@ while [[ "$#" -gt 0 ]]; do
 done
 
 [[ "${EUID}" -eq 0 ]] || die "this command must run as root"
-require_cmd blockdev findfs findmnt lsblk partprobe resize2fs sfdisk udevadm
+require_cmd awk blkid blockdev findfs findmnt lsblk partprobe resize2fs sfdisk udevadm
 
 root_source="$(findmnt -no SOURCE /)"
 root_fstype="$(findmnt -no FSTYPE /)"
 [[ "${root_fstype}" == "ext4" ]] || die "root filesystem is ${root_fstype}, not ext4"
 
-root_source="${root_source%%[*}"
-if [[ "${root_source}" == UUID=* || "${root_source}" == LABEL=* || "${root_source}" == PARTUUID=* || "${root_source}" == PARTLABEL=* ]]; then
-  root_source="$(findfs "${root_source}")"
-fi
+root_source="$(resolve_block_source "${root_source}")"
 [[ -b "${root_source}" ]] || die "root source is not a block device: ${root_source}"
 root_dev="$(readlink -f "${root_source}")"
 [[ -b "${root_dev}" ]] || die "unable to resolve root block device from ${root_source}"
@@ -75,8 +106,8 @@ disk="/dev/${parent_name}"
 [[ -b "${disk}" ]] || die "parent disk does not exist: ${disk}"
 
 removable="$(lsblk -dnro RM "${disk}" | head -n1 | tr -d '[:space:]')"
-if [[ "${removable}" != "1" && "${force}" -ne 1 ]]; then
-  die "${disk} is not marked removable; pass --force if this is the intended SD root device"
+if [[ "${removable}" != "1" && "${force}" -ne 1 ]] && ! is_thorch_sd_root "${root_dev}" "${parent_name}" "${disk}"; then
+  die "${disk} is not marked removable and does not match the expected Thorch SD root layout; pass --force only if this is the intended SD root device"
 fi
 
 root_mount_opts="$(findmnt -no OPTIONS /)"
