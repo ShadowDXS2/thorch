@@ -111,7 +111,7 @@ artifacts changed, run `scripts/build-image-fast.sh --with-kernel`.
 The default image package set is:
 
 ```bash
-linux-thorch thorch-bsp thorch-firmware-rocknix thorch-kde-defaults thorch-installer thorch-fex-bin thorch-gaming-installers
+linux-thorch thorch-bsp thorch-firmware-rocknix thorch-kde-defaults thorch-installer thorch-fex-bin thorch-gamescope thorch-gaming-installers
 ```
 
 `thorch-kde-defaults` installs Firefox and the core KDE desktop applications:

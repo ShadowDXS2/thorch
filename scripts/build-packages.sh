@@ -77,7 +77,7 @@ stock_kernel_firmware=(
   linux-firmware-whence
 )
 
-packages=(thorch-bsp thorch-fex-bin thorch-firmware-rocknix thorch-kde-defaults thorch-installer thorch-gaming-installers)
+packages=(thorch-bsp thorch-fex-bin thorch-firmware-rocknix thorch-kde-defaults thorch-installer thorch-gamescope thorch-gaming-installers)
 if [[ "${skip_kernel}" -eq 0 ]]; then
   packages=(linux-thorch "${packages[@]}")
 fi
@@ -222,6 +222,10 @@ for pkg in "${packages[@]}"; do
   rm -rf "${work_dir}/${pkg}" "${pkgdest}"
   install -d "${work_dir}/${pkg}" "${pkgdest}"
   rsync -a "${root}/packages/${pkg}/" "${work_dir}/${pkg}/"
+  if [[ -f "${root}/packages/${pkg}/.thorch-build-pacman-deps" ]]; then
+    deps="$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "${root}/packages/${pkg}/.thorch-build-pacman-deps" | tr '\n' ' ')"
+    [[ -z "${deps}" ]] || run_chroot "pacman -S --needed --noconfirm ${deps}"
+  fi
   run_chroot "chown -R builder:builder /thorch-work/${pkg} /thorch-pkgdest"
   run_chroot "cd /thorch-work/${pkg} && su builder -c 'env PKGDEST=/thorch-pkgdest THORCH_ROCKNIX_DIR=/thorch-input/${THORCH_ROCKNIX_DIR} THORCH_FIRMWARE_DIR=/thorch-input/${THORCH_FIRMWARE_DIR} THORCH_ROCKNIX_KERNEL_DIR=/thorch-input/${THORCH_ROCKNIX_KERNEL_DIR} THORCH_ROCKNIX_RUNTIME_DIR=/thorch-input/${THORCH_ROCKNIX_RUNTIME_DIR} makepkg --nodeps --noconfirm --cleanbuild'"
   find "${pkgdest}" -maxdepth 1 -type f -name '*.pkg.tar.*' -exec cp -f {} "${repo_dir}/" \;

@@ -35,6 +35,11 @@ library for the imported binaries, and a Steam-compatible FEX tool under
 `/usr/share/steam/fex`. The package provides and replaces the old `thorch-fex`
 name for upgrades.
 
+`thorch-gamescope` builds Valve's gamescope from source with the Thorch nested
+Wayland touch patch applied while upstream PR 2104 is pending. It provides and
+conflicts with `gamescope`, so installers and launchers can continue invoking
+the standard `gamescope` command.
+
 `thorch-gaming-installers` provides the opt-in Steam ARM64 and gaming setup
 launcher. It does not redistribute Steam client payloads. It keeps ROCKNIX-style
 Steam metadata in `/usr/share/steam` for the ARM64 Proton compatibility-tool

@@ -38,7 +38,11 @@ if [[ "${system}" -eq 1 ]]; then
     echo "Run --system as root, or omit --system for a user-local launcher." >&2
     exit 1
   fi
-  pacman -S --needed curl file gamescope jq libxinerama lsof lsb-release openal tar unzip thorch-firmware-rocknix wget xorg-xwininfo
+  gamescope_pkg=gamescope
+  if pacman -Si thorch-gamescope >/dev/null 2>&1; then
+    gamescope_pkg=thorch-gamescope
+  fi
+  pacman -S --needed curl file "${gamescope_pkg}" jq libxinerama lsof lsb-release openal tar unzip thorch-firmware-rocknix wget xorg-xwininfo
   bin_dir=/usr/local/bin
   app_dir=/usr/share/applications
 else
