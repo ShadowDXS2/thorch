@@ -17,9 +17,9 @@ Use a pinned commit or labelled ROCKNIX image build for release builds:
 ./scripts/import-rocknix-kernel.sh --boot-dir /mnt/rocknix-boot --root-dir /mnt/rocknix-root --ref <rocknix-build-label>
 ```
 
-The sync and import scripts write provenance files into `vendor/rocknix-sm8550`
-and `vendor/rocknix-kernel` so generated builds can be traced back to the exact
-upstream source and image artifact.
+The sync and import scripts write provenance files into `vendor/rocknix-sm8550`,
+`vendor/rocknix-kernel`, and `vendor/rocknix-runtime` so generated builds can be
+traced back to the exact upstream source and image artifact.
 
 Image and package builds refuse kernel provenance that points back at local
 `makepkg` output or smoke-test imports. Re-import kernel artifacts from a mounted
@@ -30,6 +30,18 @@ or extracted ROCKNIX image before preparing release artifacts.
 Thor firmware is sourced from the public ROCKNIX SM8550 firmware tree and
 packaged as `thorch-firmware-rocknix`. Thorch preserves upstream provenance, but
 does not claim new licensing rights over those blobs.
+
+Some Adreno firmware and runtime graphics files are imported from the ROCKNIX
+image `/SYSTEM` payload together with the kernel import. Those image-derived
+files are recorded in kernel/runtime provenance rather than in the public source
+overlay provenance.
+
+## FEX Runtime
+
+The FEX runtime packaged as `thorch-fex-bin` is imported from the matching
+ROCKNIX `/SYSTEM` payload. Runtime provenance is written to
+`vendor/rocknix-runtime/PROVENANCE` and installed into package license metadata
+with the imported binaries.
 
 ## Arch Linux ARM
 

@@ -43,20 +43,27 @@ Package and image builders reject smoke-test or local `makepkg` kernel
 provenance. Re-import the kernel from a real ROCKNIX image before preparing
 release artifacts.
 
-For clean-room testing, do not import from previous Thorch/Prime output
-directories, copied `vendor/rocknix-kernel` trees, or locally built package
-payloads. Use a freshly mounted or freshly extracted ROCKNIX image and keep the
-`KERNEL_REF` label tied to that input.
+For clean-room testing, do not import from previous Thorch output directories,
+copied `vendor/rocknix-kernel` trees, or locally built package payloads. Use a
+freshly mounted or freshly extracted ROCKNIX image and keep the `KERNEL_REF`
+label tied to that input.
 
 `make build` and `make packages` run `scripts/sync-rocknix-kernel.sh`
 automatically when `vendor/rocknix-kernel/boot/Image` or the imported FEX
 runtime is missing. To pin a specific upstream image, set one of:
 
 ```bash
+ROCKNIX_KERNEL_SOURCE=stable ROCKNIX_KERNEL_RELEASE=latest make kernel
 ROCKNIX_KERNEL_RELEASE=nightly-20260430 make kernel
 ROCKNIX_KERNEL_RELEASE=nightly-20260428 make kernel
 ROCKNIX_KERNEL_IMAGE_URL=https://.../ROCKNIX-SM8550.aarch64-YYYYMMDD.img.gz make kernel
 ```
+
+`ROCKNIX_KERNEL_SOURCE` defaults to `nightly`; use `stable` when importing from
+the latest stable ROCKNIX release stream. If an upstream image has no matching
+`.sha256` asset, the sync refuses the import unless you provide
+`ROCKNIX_KERNEL_SHA256_URL` or explicitly set `ROCKNIX_KERNEL_ALLOW_UNVERIFIED=1`
+for a local experiment.
 
 Package builds happen in an Arch Linux ARM aarch64 rootfs through
 `systemd-nspawn` and `qemu-aarch64-static`. The builder copies Thorch package
@@ -87,6 +94,9 @@ the Thor DTB and the root UUID for this image.
 The image builder assembles FAT and ext4 filesystem images directly and writes
 them into a raw GPT image. It does not mount image partitions or bind-mount host
 API filesystems.
+
+The boot partition defaults to 512 MiB and the raw image defaults to 8 GiB. Use
+`THORCH_BOOT_SIZE` and `THORCH_IMAGE_SIZE` when a different layout is needed.
 
 If the build host cannot show interactive `sudo` prompts, invoke the scripts
 through PolicyKit so the desktop authentication agent can prompt visibly:
@@ -152,13 +162,26 @@ IMAGE=/dev/sdX`; the `/KERNEL` check must report that it embeds the Thor DTB.
 ## Important Environment
 
 - `ROCKNIX_REF`: ROCKNIX branch, tag, or commit to sync.
-- `THORCH_ROCKNIX_KERNEL_DIR`: imported ROCKNIX kernel artifact directory.
-- `THORCH_ROCKNIX_RUNTIME_DIR`: imported ROCKNIX runtime/FEX artifact directory.
+- `ROCKNIX_REPO`: ROCKNIX distribution repository URL.
+- `ROCKNIX_KERNEL_SOURCE`: ROCKNIX image release stream, `nightly` by default; can be `stable`.
+- `ROCKNIX_KERNEL_RELEASE`: release tag/date to import, default `latest`.
+- `ROCKNIX_KERNEL_PLATFORM`: ROCKNIX platform name, default `SM8550`.
+- `ROCKNIX_KERNEL_IMAGE_URL`: explicit ROCKNIX `.img` or `.img.gz` URL.
+- `ROCKNIX_KERNEL_SHA256_URL`: explicit checksum URL for the ROCKNIX image.
+- `ROCKNIX_KERNEL_CACHE_DIR`: download/decompression cache, default `build/cache/rocknix`.
 - `THORCH_USER`: default image user, default `thorch`.
 - `THORCH_PASSWORD`: password/PIN for the default user and root, default `1234`.
 - `THORCH_IMAGE_SIZE`: raw image size, default `8G`.
+- `THORCH_BOOT_SIZE`: FAT boot partition size, default `512M`.
 - `THORCH_DEFAULT_SESSION`: `plasma-desktop` by default; use `plasma-mobile` to test the mobile shell.
 - `THORCH_IMAGE_PACKAGES`: local packages installed into the image.
+- `THORCH_BUILD_DIR`: build work directory, default `build`.
+- `THORCH_OUTPUT_DIR`: image/package output directory, default `output`.
+- `THORCH_LOCAL_REPO_DIR`: local package repository path, default `output/repo`.
+- `THORCH_ROCKNIX_DIR`: synced ROCKNIX source/overlay directory.
+- `THORCH_FIRMWARE_DIR`: synced ROCKNIX firmware directory.
+- `THORCH_ROCKNIX_KERNEL_DIR`: imported ROCKNIX kernel artifact directory.
+- `THORCH_ROCKNIX_RUNTIME_DIR`: imported ROCKNIX runtime/FEX artifact directory.
 - `ALARM_ROOTFS_URL`: Arch Linux ARM aarch64 rootfs URL.
 - `ALARM_ROOTFS_SIG_URL`: detached signature URL for the Arch Linux ARM rootfs.
 - `ALARM_ROOTFS_SIGNING_KEYS`: pinned trusted rootfs signing fingerprints.
@@ -166,5 +189,6 @@ IMAGE=/dev/sdX`; the `/KERNEL` check must report that it embeds the Thor DTB.
 - `ALARM_ROOTFS_KEYSERVER`: optional fallback keyserver used to fetch missing pinned signing keys.
 - `ALARM_ROOTFS_KEY_FETCH_TIMEOUT`: timeout for rootfs signing-key fetches.
 - `ALARM_ROOTFS_SHA256`: pinned Arch Linux ARM rootfs hash, used instead of signature verification when set.
+- `ALARM_MIRRORS`: space-separated Arch Linux ARM pacman mirror bases written into the image.
 - `ALARM_MIRROR`: Arch Linux ARM pacman mirror base.
 - `ROCKNIX_KERNEL_ALLOW_UNVERIFIED`: set to `1` only for local experiments that intentionally import an unverified ROCKNIX image.

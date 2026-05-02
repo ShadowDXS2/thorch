@@ -9,6 +9,9 @@ The safest in-image installer flow uses explicit target partitions:
 sudo thorch-install-internal --boot-device /dev/<boot-partition> --root-device /dev/<root-partition>
 ```
 
+The default target mountpoint is `/mnt/thorch-internal`. A custom `--target` is
+accepted only under `/mnt/thorch-internal` or `/run/thorch-installer`.
+
 With no device arguments, the installer may auto-detect exactly one existing
 internal ROCKNIX/Thorch Linux target and ask for confirmation before formatting
 that target. It will not create new partitions or shrink Android userdata in the
@@ -20,18 +23,24 @@ Creating a target by shrinking Android `userdata` is an explicit advanced flow:
 sudo thorch-install-internal --create-from-userdata
 ```
 
-That mode wipes Android userdata, recreates it smaller, creates the Thorch boot
-and root partitions, and requires the typed confirmation `SHRINK USERDATA`
-before repartitioning.
+That mode wipes Android userdata, recreates it smaller, creates a 2 GiB
+ROCKNIX-compatible boot partition, creates a Thorch root partition in the
+remaining space, and requires typed confirmations before repartitioning. The
+flow first asks for `SHRINK USERDATA`, then asks how much space Android userdata
+should keep, then requires `CREATE THORCH` before changing the partition table.
 
 Safety behavior:
 
 - Refuses to run unless the current root filesystem appears to be on removable
-  media.
+  media or matches the expected Thorch SD layout. Thor can report the SD slot as
+  non-removable, so the fallback checks for root on `mmcblk*`, root label
+  `THORCH_ROOT`, and `/boot` label `ROCKNIX` on the same card.
 - Requires explicit boot/root block devices, one auto-detected existing
   ROCKNIX/Thorch target, or the explicit `--create-from-userdata` mode.
-- Refuses common Android partition labels such as `boot_a`, `boot_b`, `vendor`,
-  `system`, `super`, `userdata`, `abl`, `dtbo`, `vbmeta`, and `modem`.
+- Refuses common Android partition labels such as `abl`, `boot_a`, `boot_b`,
+  `vendor`, `system`, `super`, `metadata`, `userdata`, `dtbo`, `vbmeta`,
+  `persist`, `modem`, `bluetooth`, `dsp`, `xbl`, `tz`, `hyp`, `keymaster`, and
+  `recovery`.
 - Requires the typed confirmation `INSTALL THORCH`.
 - Backs up readable existing boot files under `/var/lib/thorch-installer`.
 - Formats the selected boot partition as FAT32 label `ROCKNIX`.
