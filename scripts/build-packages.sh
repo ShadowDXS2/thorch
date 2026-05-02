@@ -8,7 +8,7 @@ load_thorch_config
 
 usage() {
   cat >&2 <<'EOF'
-usage: scripts/build-packages.sh [--skip-kernel] [--packages <name[,name...]>]
+usage: scripts/build-packages.sh [--skip-kernel] [--packages <name[,name...]>] [--skip-fresh]
 
 Builds Thorch aarch64 packages in an Arch Linux ARM rootfs using systemd-nspawn
 and qemu-user-static. The linux-thorch package wraps imported ROCKNIX kernel
@@ -16,10 +16,13 @@ artifacts. Use --skip-kernel while iterating on userspace packages only.
 
   --packages           build only the comma-separated package list supplied;
                        useful for fast iteration on one package.
+  --skip-fresh         reuse an existing repo package when local inputs are not
+                       newer than that package.
 EOF
 }
 
 skip_kernel=0
+skip_fresh=0
 requested_packages=()
 while [[ "$#" -gt 0 ]]; do
   case "$1" in
@@ -31,6 +34,10 @@ while [[ "$#" -gt 0 ]]; do
       [[ "$#" -ge 2 ]] || die "--packages requires a comma-separated list"
       IFS=',' read -r -a requested_packages <<< "$2"
       shift 2
+      ;;
+    --skip-fresh)
+      skip_fresh=1
+      shift
       ;;
     -h|--help)
       usage
@@ -160,6 +167,58 @@ pkginfo_value() {
   bsdtar -xOqf "${pkgfile}" .PKGINFO | awk -F ' = ' -v key="${key}" '$1 == key {print $2; exit}'
 }
 
+latest_repo_package_for() {
+  local pkg="$1" file pkgname current
+
+  shopt -s nullglob
+  for file in "${repo_dir}"/*.pkg.tar.*; do
+    pkgname="$(pkginfo_value "${file}" pkgname)"
+    [[ "${pkgname}" == "${pkg}" ]] || continue
+    current="${current:-}"
+    if [[ -z "${current}" || "${file}" -nt "${current}" ]]; then
+      current="${file}"
+    fi
+  done
+  shopt -u nullglob
+
+  [[ -n "${current:-}" ]] || return 1
+  printf '%s\n' "${current}"
+}
+
+package_inputs_newer_than() {
+  local pkg="$1" pkgfile="$2" dir
+  local -a input_dirs=("${root}/packages/${pkg}")
+
+  case "${pkg}" in
+    linux-thorch|thorch-firmware-rocknix)
+      input_dirs+=("${root}/${THORCH_ROCKNIX_KERNEL_DIR}")
+      ;;
+    thorch-fex-bin)
+      input_dirs+=("${root}/${THORCH_ROCKNIX_RUNTIME_DIR}")
+      ;;
+  esac
+
+  for dir in "${input_dirs[@]}"; do
+    [[ -e "${dir}" ]] || continue
+    if find "${dir}" -type f -newer "${pkgfile}" -print -quit | grep -q .; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+fresh_repo_package_for() {
+  local pkg="$1" pkgfile
+
+  pkgfile="$(latest_repo_package_for "${pkg}")" || return 1
+  if package_inputs_newer_than "${pkg}" "${pkgfile}"; then
+    return 1
+  fi
+
+  printf '%s\n' "${pkgfile}"
+}
+
 prune_stale_repo_packages() {
   local -A best_file=()
   local -A best_version=()
@@ -218,6 +277,13 @@ run_chroot "gpgconf --kill all >/dev/null 2>&1 || pkill gpg-agent >/dev/null 2>&
 run_chroot "id builder >/dev/null 2>&1 || useradd -m builder"
 run_chroot "install -d -o builder -g builder /nix"
 for pkg in "${packages[@]}"; do
+  if [[ "${skip_fresh}" -eq 1 ]]; then
+    if pkgfile="$(fresh_repo_package_for "${pkg}")"; then
+      log "skipping ${pkg}; ${pkgfile##*/} is fresh"
+      continue
+    fi
+  fi
+
   log "building ${pkg}"
   rm -rf "${work_dir}/${pkg}" "${pkgdest}"
   install -d "${work_dir}/${pkg}" "${pkgdest}"

@@ -10,9 +10,9 @@ usage() {
   cat >&2 <<'EOF'
 usage: scripts/build-image-fast.sh [--with-kernel]
 
-Fast rebuild path for Thorch image iteration. It rebuilds local Thorch packages,
-reinstalls them into the cached build/image-rootfs, regenerates boot artifacts,
-and reassembles the raw image without reinstalling Arch/KDE.
+Fast rebuild path for Thorch image iteration. It rebuilds stale local Thorch
+packages, reinstalls them into the cached build/image-rootfs, regenerates boot
+artifacts, and reassembles the raw image without reinstalling Arch/KDE.
 
 Run scripts/build-image.sh once first to create build/image-rootfs.
 
@@ -58,10 +58,6 @@ if [[ "${with_kernel}" -eq 0 ]]; then
 fi
 image_packages_csv="$(IFS=,; printf '%s' "${image_packages[*]}")"
 
-if [[ "${with_kernel}" -eq 1 ]]; then
-  "${script_dir}/build-packages.sh" --packages "${image_packages_csv}"
-else
-  "${script_dir}/build-packages.sh" --packages "${image_packages_csv}"
-fi
+"${script_dir}/build-packages.sh" --skip-fresh --packages "${image_packages_csv}"
 
 "${script_dir}/build-image.sh" --skip-package-build --reuse-rootfs
