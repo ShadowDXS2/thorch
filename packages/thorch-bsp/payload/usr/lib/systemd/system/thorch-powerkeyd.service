@@ -1,0 +1,12 @@
+[Unit]
+Description=Thorch fake suspend power/lid key daemon
+After=systemd-udevd.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/thorch-powerkeyd
+Restart=always
+RestartSec=1s
+
+[Install]
+WantedBy=multi-user.target
