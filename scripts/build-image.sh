@@ -229,6 +229,8 @@ run_rootfs "systemctl disable systemd-networkd.service systemd-networkd-wait-onl
 run_rootfs "systemctl mask systemd-networkd.service systemd-networkd-wait-online.service systemd-networkd.socket systemd-networkd-varlink.socket systemd-networkd-varlink-metrics.socket systemd-networkd-resolve-hook.socket >/dev/null 2>&1 || true"
 
 rm -f "${rootfs_dir}/etc/mkinitcpio.d/linux-aarch64.preset"
+# The ALARM tarball may not include an empty /boot entry once boot contents are excluded.
+install -d "${rootfs_dir}/boot"
 root_uuid="$(uuidgen)"
 fat_id="$(od -An -N4 -tx4 /dev/urandom | tr -d ' \n')"
 fat_id="${fat_id^^}"
