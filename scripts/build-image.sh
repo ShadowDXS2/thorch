@@ -251,7 +251,26 @@ install -Dm644 "${root}/${THORCH_ROCKNIX_KERNEL_DIR}/boot/KERNEL" \
 run_rootfs "thorch-rebuild-abl-kernel --root-uuid ${root_uuid} --rootfstype ext4"
 rm -f "${rootfs_dir}/boot/Image"
 run_rootfs "thorch-check-boot"
-systemctl --root "${rootfs_dir}" enable NetworkManager.service sshd.service sddm.service systemd-binfmt.service thorch-usb-gadget.service thorch-usb-network.service thorch-rgb.service thorch-rgb-battery.service thorch-rgb-poweroff.service thorch-touchscreen-setup.service thorch-f24-escape.service thorch-powerkeyd.service thorch-debug-report.service >/dev/null
+rootfs_services=(
+  NetworkManager.service
+  sshd.service
+  sddm.service
+  systemd-binfmt.service
+  thorch-usb-gadget.service
+  thorch-usb-network.service
+  thorch-rgb.service
+  thorch-rgb-battery.service
+  thorch-rgb-poweroff.service
+  thorch-touchscreen-setup.service
+  thorch-f24-escape.service
+  thorch-powerkeyd.service
+  thorch-debug-report.service
+)
+if [[ -f "${rootfs_dir}/usr/lib/systemd/system/inputplumber.service" ||
+  -f "${rootfs_dir}/etc/systemd/system/inputplumber.service" ]]; then
+  rootfs_services+=(inputplumber.service)
+fi
+systemctl --root "${rootfs_dir}" enable "${rootfs_services[@]}" >/dev/null
 
 log "creating boot filesystem image"
 install -d "${boot_stage}"

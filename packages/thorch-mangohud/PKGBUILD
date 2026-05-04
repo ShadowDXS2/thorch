@@ -1,0 +1,65 @@
+# Maintainer: Thorch contributors
+
+pkgname=thorch-mangohud
+pkgver=0.8.3_rocknix
+pkgrel=1
+_commit=d7654ebcefb3bdb106d581c937417aa2007eaeeb
+pkgdesc='MangoHud with ROCKNIX SM8550 GPU support patch and config'
+arch=(aarch64)
+url='https://github.com/flightlessmango/MangoHud'
+license=(MIT)
+depends=(
+  dbus
+  gcc-libs
+  glibc
+  libx11
+  libxcb
+  mesa
+  python
+  vulkan-icd-loader
+  wayland
+)
+makedepends=(
+  cmake
+  git
+  glslang
+  meson
+  ninja
+  python-mako
+  vulkan-headers
+)
+provides=(mangohud)
+conflicts=(mangohud)
+source=(
+  "https://github.com/flightlessmango/MangoHud/archive/${_commit}.tar.gz"
+)
+b2sums=(
+  'SKIP'
+)
+backup=(etc/MangoHud.conf)
+
+prepare() {
+  cd "MangoHud-${_commit}"
+  local rocknix_patch="${THORCH_ROCKNIX_DIR:?THORCH_ROCKNIX_DIR is required}/packages/apps/mangohud/patches/SM8550/0001-SM8550-GPU.patch"
+  [[ -f "${rocknix_patch}" ]] || { printf 'missing ROCKNIX MangoHud patch: %s\n' "${rocknix_patch}" >&2; exit 1; }
+  patch -Np1 -i "${rocknix_patch}"
+}
+
+build() {
+  arch-meson "MangoHud-${_commit}" build \
+    -Dwith_xnvctrl=disabled \
+    -Dwith_x11=enabled \
+    -Dwith_wayland=enabled \
+    -Dmangoplot=disabled \
+    -Dmangoapp=true
+  meson compile -C build
+}
+
+package() {
+  DESTDIR="${pkgdir}" meson install -C build
+  local rocknix_config="${THORCH_ROCKNIX_DIR:?THORCH_ROCKNIX_DIR is required}/packages/apps/mangohud/config/MangoHud.conf"
+  [[ -f "${rocknix_config}" ]] || { printf 'missing ROCKNIX MangoHud config: %s\n' "${rocknix_config}" >&2; exit 1; }
+  install -Dm644 "${rocknix_config}" "${pkgdir}/etc/MangoHud.conf"
+  install -Dm644 "${rocknix_config}" "${pkgdir}/usr/share/thorch/mangohud/MangoHud.conf"
+  install -Dm644 "MangoHud-${_commit}/LICENSE" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}

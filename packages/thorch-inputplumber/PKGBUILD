@@ -1,0 +1,20 @@
+# Maintainer: Thorch contributors
+
+pkgname=thorch-inputplumber
+pkgver=0.76.1
+pkgrel=1
+pkgdesc='Input router and remapper for AYN Odin 2'
+arch=(aarch64)
+url='https://github.com/ShadowBlip/InputPlumber'
+license=(GPL3)
+depends=(dbus glibc libevdev libgcc libiio polkit systemd-libs)
+source=("https://github.com/ShadowBlip/InputPlumber/releases/download/v${pkgver}/inputplumber-aarch64.tar.gz")
+sha256sums=('63156c860705dda483a413c60f9ba8aeaf66be034dffa36ec46b066cc861f9dc')
+
+package() {
+  cp -a "${srcdir}/inputplumber/." "${pkgdir}/"
+  chmod 755 "${pkgdir}/usr/bin/inputplumber"
+
+  install -d "${pkgdir}/usr/share/inputplumber"
+  cp -a "${startdir}/payload/usr/share/inputplumber/." "${pkgdir}/usr/share/inputplumber/"
+}

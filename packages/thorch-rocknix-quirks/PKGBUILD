@@ -1,0 +1,21 @@
+# Maintainer: Thorch contributors
+
+pkgname=thorch-rocknix-quirks
+pkgver=1
+pkgrel=1
+pkgdesc='ROCKNIX-derived SM8550 handheld quirks adapted for Thorch'
+arch=(any)
+url='https://github.com/ROCKNIX/distribution'
+license=(GPL-2.0-only)
+depends=(bash)
+source=()
+
+package() {
+  local rocknix_quirks="${THORCH_ROCKNIX_DIR:?THORCH_ROCKNIX_DIR is required}/packages/hardware/quirks/platforms/SM8550"
+  [[ -d "${rocknix_quirks}" ]] || { printf 'missing ROCKNIX SM8550 quirks dir: %s\n' "${rocknix_quirks}" >&2; exit 1; }
+
+  cd "${startdir}/payload"
+  cp -a . "${pkgdir}/"
+  install -d "${pkgdir}/usr/share/thorch/rocknix-quirks/SM8550"
+  cp -a "${rocknix_quirks}/." "${pkgdir}/usr/share/thorch/rocknix-quirks/SM8550/"
+}

@@ -1,0 +1,11 @@
+[Unit]
+Description=InputPlumber remaps input devices
+After=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/inputplumber
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

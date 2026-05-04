@@ -42,7 +42,7 @@ if [[ "${system}" -eq 1 ]]; then
   if pacman -Si thorch-gamescope >/dev/null 2>&1; then
     gamescope_pkg=thorch-gamescope
   fi
-  pacman -S --needed curl file "${gamescope_pkg}" jq libxinerama lsof lsb-release openal tar unzip thorch-firmware-rocknix wget xorg-xwininfo
+  pacman -S --needed curl file "${gamescope_pkg}" jq libxinerama lsof lsb-release openal tar unzip thorch-firmware-rocknix thorch-mangohud wget xorg-xwininfo
   bin_dir=/usr/local/bin
   app_dir=/usr/share/applications
 else
@@ -72,9 +72,12 @@ gamescope_width="${THORCH_STEAM_GAMESCOPE_WIDTH:-1920}"
 gamescope_height="${THORCH_STEAM_GAMESCOPE_HEIGHT:-1080}"
 gamescope_refresh="${THORCH_STEAM_GAMESCOPE_REFRESH:-60}"
 gamescope_backend="${THORCH_STEAM_GAMESCOPE_BACKEND:-nested}"
+mangohud="${THORCH_STEAM_MANGOHUD:-auto}"
+mangohud_config="${THORCH_STEAM_MANGOHUD_CONFIG:-}"
 runtime_lib_dir=""
 runtime_bin_dir=""
 support_bin_dir="${steam_root}/thorch-steamos-bin"
+mangoapp_args=()
 mkdir -p "${steam_root}" "${steam_root}/package" "${HOME}/.steam"
 if [[ -z "${steam_branch}" ]]; then
   case "${mode}" in
@@ -87,6 +90,62 @@ if [[ -z "${steam_branch}" ]]; then
   esac
 fi
 echo "${steam_branch}" > "${steam_root}/package/beta"
+
+configure_mangohud() {
+  local config_dir config_file system_config user_config
+
+  case "${mangohud,,}" in
+    1|true|yes|on|enabled|auto|"")
+      ;;
+    0|false|no|off|disabled)
+      ;;
+    *)
+      echo "Warning: ignoring unknown THORCH_STEAM_MANGOHUD value '${mangohud}'." >&2
+      ;;
+  esac
+
+  unset MANGOHUD
+  config_dir="${HOME}/.config/MangoHud"
+  user_config="${config_dir}/MangoHud.conf"
+  system_config=""
+  if [[ -f /usr/share/thorch/mangohud/MangoHud.conf ]]; then
+    system_config="/usr/share/thorch/mangohud/MangoHud.conf"
+  elif [[ -f /etc/MangoHud.conf ]]; then
+    system_config="/etc/MangoHud.conf"
+  fi
+
+  mkdir -p "${config_dir}"
+  if [[ ! -f "${user_config}" && -n "${system_config}" ]]; then
+    cp -f "${system_config}" "${user_config}"
+  fi
+
+  if [[ -n "${mangohud_config}" ]]; then
+    config_file="${mangohud_config}"
+  elif [[ -f "${user_config}" ]]; then
+    config_file="${user_config}"
+  else
+    config_file=""
+  fi
+
+  [[ -f "${config_file}" && -w "${config_file}" ]] || return 0
+  export MANGOHUD_CONFIGFILE="${config_file}"
+  mangoapp_args=(--mangoapp)
+
+  case "${mangohud,,}" in
+    1|true|yes|on|enabled)
+      if grep -q '^no_display' "${config_file}"; then
+        sed -i 's/^no_display/# no_display/' "${config_file}"
+      fi
+      ;;
+    0|false|no|off|disabled)
+      if grep -q '^# *no_display' "${config_file}"; then
+        sed -i 's/^# *no_display/no_display/' "${config_file}"
+      elif ! grep -q '^no_display' "${config_file}"; then
+        printf '\nno_display\n' >> "${config_file}"
+      fi
+      ;;
+  esac
+}
 
 ensure_fex_server() {
   command -v FEXServer >/dev/null 2>&1 || return 0
@@ -171,10 +230,6 @@ install_rocknix_steam_compat_assets() {
   [[ -f "${system_steam}/compatibilitytool.vdf" && -f "${system_steam}/toolmanifest.vdf" ]] || return 0
 
   if [[ ! -x "${system_steam}/Proton11ARM/proton" && ! -x "${system_steam}/proton" ]]; then
-    rm -f "${steam_root}/compatibilitytools.d/compatibilitytool.vdf"
-    [[ ! -L "${steam_root}/compatibilitytools.d/Proton11ARM" ]] || rm -f "${steam_root}/compatibilitytools.d/Proton11ARM"
-    rm -f "${proton_dir}/toolmanifest.vdf" "${proton_dir}/proton"
-    rmdir "${proton_dir}" 2>/dev/null || true
     return 0
   fi
 
@@ -540,6 +595,7 @@ install_steamos_compat_stubs
 install_rocknix_guest_freedreno
 seed_fex_steam_app_configs
 ensure_fex_server
+configure_mangohud
 export LD_LIBRARY_PATH="${steam_root}/steamrtarm64:${steam_root}/steamrtarm64/video:${steam_root}/lib/aarch64-linux-gnu${runtime_lib_dir:+:${runtime_lib_dir}}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
 export PATH="${support_bin_dir}${runtime_bin_dir:+:${runtime_bin_dir}}:${PATH}"
 export STEAM_BASE_FOLDER="${steam_root}"
@@ -567,6 +623,7 @@ if command -v gamescope >/dev/null 2>&1 && [[ "${use_gamescope}" == 1 ]]; then
     --xwayland-count 2
     -b
     -f
+    "${mangoapp_args[@]}"
     -e
   )
   case "${gamescope_backend}" in
