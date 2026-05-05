@@ -1,0 +1,5 @@
+[Desktop Entry]
+Name=Thorch Setup
+Comment=Set up Thorch before entering Plasma
+Exec=/usr/bin/thorch-firstboot-session
+Type=Application

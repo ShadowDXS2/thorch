@@ -1,0 +1,168 @@
+#!/usr/bin/env python3
+import json
+import os
+import pathlib
+import sys
+import time
+from datetime import datetime, timezone
+
+
+STATE_FILE = pathlib.Path(os.environ.get("THORCH_FIRSTBOOT_STATE_FILE", ".mock/firstboot/state.json"))
+DONE_FILE = pathlib.Path(os.environ.get("THORCH_FIRSTBOOT_DONE_FILE", ".mock/firstboot/done"))
+
+
+def now():
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def read_payload():
+    text = sys.stdin.read()
+    if not text:
+        return {}
+    return json.loads(text)
+
+
+def read_state():
+    try:
+        return json.loads(STATE_FILE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def write_state(state, done=False):
+    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    state["updatedAt"] = now()
+    STATE_FILE.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+    if done:
+        DONE_FILE.write_text(state.get("completedAt", state["updatedAt"]) + "\n", encoding="utf-8")
+    elif DONE_FILE.exists():
+        DONE_FILE.unlink()
+
+
+def emit(ok, message, code=0, **extra):
+    payload = {"ok": ok, "message": message}
+    payload.update(extra)
+    print(json.dumps(payload, separators=(",", ":")), flush=True)
+    raise SystemExit(code)
+
+
+def emit_progress(progress, message, output=""):
+    print(json.dumps({
+        "event": "progress",
+        "progress": progress,
+        "message": message,
+        "output": output,
+    }, separators=(",", ":")), flush=True)
+
+
+def apply_json():
+    payload = read_payload()
+    install_choice = payload.get("installChoice", "live-sd")
+    if install_choice == "install-internal" and not payload.get("internalDataLossAccepted"):
+        emit(False, "Mock: internal data-loss warning was not accepted.", code=1)
+
+    state = {
+        "username": payload.get("username", "thorch"),
+        "mode": payload.get("mode", "desktop"),
+        "theme": payload.get("theme", "thorch-oled"),
+        "installChoice": install_choice,
+        "internalDataLossAccepted": bool(payload.get("internalDataLossAccepted")),
+    }
+    if install_choice == "install-internal":
+        state["phase"] = "internal-install-ready"
+        write_state(state, done=False)
+        emit(True, "Mock: choices saved. Installing to internal storage next.", nextAction="install-internal")
+    if install_choice == "expand-sd":
+        state["phase"] = "complete"
+        state["completedAt"] = now()
+        write_state(state, done=True)
+        emit(True, "Mock: setup complete. You can use the rest of the SD card next.", nextAction="expand-sd")
+
+    state["phase"] = "complete"
+    state["completedAt"] = now()
+    write_state(state, done=True)
+    emit(True, "Mock: setup is complete.", nextAction="")
+
+
+def wifi_scan_json():
+    emit(True, "Mock: found 3 Wi-Fi networks.", networks=[
+        {"ssid": "Thorch Lab", "security": "WPA2", "signal": 92, "active": True},
+        {"ssid": "Coffee Shop", "security": "WPA2", "signal": 67, "active": False},
+        {"ssid": "Open Test Network", "security": "", "signal": 41, "active": False},
+    ])
+
+
+def wifi_connect_json():
+    payload = read_payload()
+    emit(True, f"Mock: connected to {payload.get('ssid', 'network')}.")
+
+
+def install_internal_stream_json():
+    phases = [
+        (2, "Starting the internal storage install.", "Mock target: /dev/mockboot and /dev/mockroot"),
+        (8, "Preparing internal storage.", "mkfs.vfat /dev/mockboot\nmkfs.ext4 /dev/mockroot"),
+        (18, "Copying Thorch to internal storage.", "rsync / /mnt/thorch-internal"),
+        (34, "Copying Thorch to internal storage. 30%.", "Copied 3.2 GiB of mock root."),
+        (52, "Copying Thorch to internal storage. 63%.", "Copied 6.8 GiB of mock root."),
+        (72, "Copying boot files.", "Copying ROCKNIX boot assets."),
+        (80, "Preparing the internal startup files.", "mkinitcpio -P"),
+        (90, "Preparing the boot image.", "thorch-rebuild-abl-kernel"),
+        (95, "Checking the internal boot files.", "thorch-check-boot"),
+        (98, "Finishing writes to disk.", "sync"),
+    ]
+    for progress, message, output in phases:
+        emit_progress(progress, message, output)
+        time.sleep(0.35)
+
+    state = read_state()
+    state.update({
+        "phase": "internal-install-complete-remove-sd",
+        "installChoice": "install-internal",
+        "internalDataLossAccepted": True,
+    })
+    state.pop("completedAt", None)
+    write_state(state, done=False)
+    emit(True, "Mock: Thorch has been copied to internal storage. Remove the SD card, then reboot.", progress=100, output="Mock install finished cleanly.")
+
+
+def install_internal_json():
+    state = read_state()
+    state["phase"] = "internal-install-complete-remove-sd"
+    write_state(state, done=False)
+    emit(True, "Mock: Thorch has been copied to internal storage.", output="Mock install finished cleanly.")
+
+
+def expand_sd_json():
+    emit(True, "Mock: the SD card is ready to use its full space.", output="Mock growpart + resize2fs complete.")
+
+
+def finish_json():
+    state = read_state()
+    state["phase"] = "complete"
+    state["completedAt"] = now()
+    write_state(state, done=True)
+    emit(True, "Mock: setup is complete.")
+
+
+def main():
+    if len(sys.argv) != 2:
+        print("usage: mock-thorch-firstbootctl ACTION", file=sys.stderr)
+        return 2
+    actions = {
+        "apply-json": apply_json,
+        "wifi-scan-json": wifi_scan_json,
+        "wifi-connect-json": wifi_connect_json,
+        "install-internal-json": install_internal_json,
+        "install-internal-stream-json": install_internal_stream_json,
+        "expand-sd-json": expand_sd_json,
+        "finish-json": finish_json,
+    }
+    action = actions.get(sys.argv[1])
+    if action is None:
+        emit(False, f"Mock: unsupported action {sys.argv[1]}", code=2)
+    action()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

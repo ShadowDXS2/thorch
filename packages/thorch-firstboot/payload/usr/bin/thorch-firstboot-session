@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+runner=/usr/bin/thorch-firstboot-session-runner
+
+if command -v kwin_wayland >/dev/null 2>&1; then
+  exec kwin_wayland --xwayland --exit-with-session="${runner}"
+fi
+
+exec "${runner}"

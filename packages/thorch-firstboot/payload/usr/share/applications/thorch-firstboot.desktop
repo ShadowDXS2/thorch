@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Thorch Setup
+Comment=Configure Thorch for first use
+Exec=/usr/bin/thorch-firstboot
+Icon=preferences-system
+Terminal=false
+Categories=Settings;

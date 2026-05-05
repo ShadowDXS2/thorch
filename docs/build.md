@@ -123,11 +123,12 @@ refresh. If imported ROCKNIX kernel artifacts changed, run
 The default image package set is:
 
 ```bash
-linux-thorch thorch-bsp thorch-firmware-rocknix thorch-kde-defaults thorch-installer thorch-fex-bin thorch-gamescope thorch-gaming-installers thorch-inputplumber thorch-rocknix-quirks thorch-mangohud
+linux-thorch thorch-bsp thorch-firmware-rocknix thorch-kde-defaults thorch-firstboot thorch-installer thorch-fex-bin thorch-gamescope thorch-gaming-installers thorch-inputplumber thorch-rocknix-quirks thorch-mangohud
 ```
 
 `thorch-kde-defaults` installs Firefox and the core KDE desktop applications:
 Ark, Dolphin, Gwenview, Kate, KCalc, Konsole, Okular, and Spectacle.
+`thorch-firstboot` adds the QML onboarding flow that runs on first login.
 
 Override `THORCH_IMAGE_PACKAGES` with the complete local package set when you
 want a custom image, for example:

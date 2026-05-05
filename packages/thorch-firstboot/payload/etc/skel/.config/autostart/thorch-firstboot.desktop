@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Thorch Setup
+Exec=/usr/bin/thorch-firstboot
+OnlyShowIn=KDE;
+Terminal=false
+X-KDE-autostart-phase=2

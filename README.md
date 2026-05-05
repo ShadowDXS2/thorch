@@ -185,9 +185,13 @@ notes.
 
 The default image package set is:
 `linux-thorch thorch-bsp thorch-firmware-rocknix thorch-kde-defaults
-thorch-installer thorch-fex-bin thorch-gamescope thorch-gaming-installers
+thorch-firstboot thorch-installer thorch-fex-bin thorch-gamescope thorch-gaming-installers
 thorch-inputplumber thorch-rocknix-quirks thorch-mangohud`. Override
 `THORCH_IMAGE_PACKAGES` when you need a custom image package set.
+
+`thorch-firstboot` starts a fullscreen QML onboarding flow on first login for
+Wi-Fi, SD/live-vs-install intent, default mode, user/password setup, theme
+selection, and safe in-window SD expansion/internal install actions.
 
 `thorch-inputplumber` installs InputPlumber's upstream rootfs contents and
 overlays only the Thor input maps. The image builder enables its service only

@@ -1,0 +1,24 @@
+# Maintainer: Thorch contributors
+
+pkgname=thorch-firstboot
+pkgver=1
+pkgrel=1
+pkgdesc='QML setup assistant for Thorch'
+arch=(aarch64)
+license=(GPL-2.0-or-later)
+depends=(bash coreutils grep networkmanager polkit polkit-kde-agent pyside6 python qt6-declarative shadow sddm systemd thorch-kde-defaults)
+optdepends=('thorch-installer: SD card expansion and internal storage setup actions'
+            'thorch-gaming-installers: Steam mode setup and autostart')
+source=()
+sha256sums=()
+
+package() {
+  cd "${startdir}/payload"
+  cp -a . "${pkgdir}/"
+
+  chmod 755 "${pkgdir}/usr/bin/thorch-firstboot"
+  chmod 755 "${pkgdir}/usr/bin/thorch-firstboot-session"
+  chmod 755 "${pkgdir}/usr/bin/thorch-firstboot-session-runner"
+  chmod 755 "${pkgdir}/usr/bin/thorch-firstbootctl"
+  chmod 755 "${pkgdir}/etc/skel/.config/autostart/thorch-firstboot.desktop"
+}

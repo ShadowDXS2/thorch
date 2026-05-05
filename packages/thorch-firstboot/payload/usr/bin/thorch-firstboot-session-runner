@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+agent=/usr/lib/polkit-kde-authentication-agent-1
+if [[ -x "${agent}" ]]; then
+  "${agent}" >/dev/null 2>&1 &
+fi
+
+exec /usr/bin/thorch-firstboot --force

@@ -1,0 +1,617 @@
+#!/usr/bin/env python3
+import configparser
+import json
+import os
+import pathlib
+import pwd
+import re
+import shutil
+import subprocess
+import sys
+from datetime import datetime, timezone
+
+
+STATE_DIR = pathlib.Path("/var/lib/thorch/firstboot")
+DONE_FILE = STATE_DIR / "done"
+STATE_FILE = STATE_DIR / "state.json"
+
+USER_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
+VALID_MODES = {"desktop", "mobile", "steamos-mobile", "steamos-desktop"}
+VALID_THEMES = {"thorch-oled", "breeze-dark", "breeze-light", "high-contrast"}
+VALID_INSTALL_CHOICES = {"live-sd", "expand-sd", "install-internal"}
+
+GROUPS = ("wheel", "adm", "video", "input", "audio", "storage", "render")
+
+THEMES = {
+    "thorch-oled": {
+        "name": "Thorch OLED",
+        "color_scheme": "ThorchOLED",
+        "icons": "breeze-dark",
+        "plasma": "thorch-oled",
+    },
+    "breeze-dark": {
+        "name": "Breeze Dark",
+        "color_scheme": "BreezeDark",
+        "icons": "breeze-dark",
+        "plasma": "default",
+    },
+    "breeze-light": {
+        "name": "Breeze Light",
+        "color_scheme": "BreezeLight",
+        "icons": "breeze",
+        "plasma": "default",
+    },
+    "high-contrast": {
+        "name": "High Contrast",
+        "color_scheme": "BreezeHighContrast",
+        "icons": "breeze-dark",
+        "plasma": "default",
+    },
+}
+
+
+def fail(message, code=1):
+    print(message, file=sys.stderr)
+    raise SystemExit(code)
+
+
+def emit_json(ok, message, code=0, **extra):
+    payload = {"ok": ok, "message": message}
+    payload.update(extra)
+    print(json.dumps(payload, separators=(",", ":")))
+    raise SystemExit(code)
+
+
+def emit_event(**payload):
+    print(json.dumps(payload, separators=(",", ":")), flush=True)
+
+
+def require_root():
+    if os.geteuid() != 0:
+        fail("thorch-firstbootctl must run as root")
+
+
+def run(command, **kwargs):
+    return subprocess.run(command, check=True, **kwargs)
+
+
+def run_capture(command, *, input_text=None):
+    proc = subprocess.run(
+        command,
+        input=input_text,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    output = "\n".join(part for part in (proc.stdout.strip(), proc.stderr.strip()) if part)
+    return proc.returncode, output
+
+
+def read_payload():
+    try:
+        return json.loads(sys.stdin.read())
+    except json.JSONDecodeError as exc:
+        fail(f"invalid JSON payload: {exc}")
+
+
+def string_field(payload, name, default=""):
+    value = payload.get(name, default)
+    if value is None:
+        value = default
+    return str(value)
+
+
+def bool_field(payload, name, default=False):
+    value = payload.get(name, default)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
+def validate_payload(payload):
+    username = string_field(payload, "username", "thorch").strip()
+    password = string_field(payload, "password")
+    mode = string_field(payload, "mode", "desktop")
+    theme = string_field(payload, "theme", "thorch-oled")
+    install_choice = string_field(payload, "installChoice", "live-sd")
+    internal_data_loss_accepted = bool_field(payload, "internalDataLossAccepted")
+
+    if not USER_RE.match(username):
+        fail("Username must start with a lowercase letter or underscore and use only lowercase letters, numbers, hyphen, or underscore.")
+
+    if mode == "steamos":
+        mode = "steamos-mobile"
+    if mode not in VALID_MODES:
+        fail(f"Unsupported mode: {mode}")
+
+    if theme not in VALID_THEMES:
+        fail(f"Unsupported theme: {theme}")
+
+    if install_choice not in VALID_INSTALL_CHOICES:
+        fail(f"Unsupported install choice: {install_choice}")
+
+    if "\n" in password:
+        fail("Passwords must not contain newlines.")
+
+    if not password:
+        fail("A password is required.")
+
+    if install_choice == "install-internal" and not internal_data_loss_accepted:
+        fail("Please confirm that installing to internal storage can erase data.")
+
+    return {
+        "username": username,
+        "admin_password": password,
+        "user_password": password,
+        "mode": mode,
+        "theme": theme,
+        "install_choice": install_choice,
+        "internal_data_loss_accepted": internal_data_loss_accepted,
+    }
+
+
+def ensure_groups():
+    for group in GROUPS:
+        try:
+            run(["getent", "group", group], stdout=subprocess.DEVNULL)
+        except subprocess.CalledProcessError:
+            run(["groupadd", "-r", group])
+
+
+def ensure_user(username):
+    ensure_groups()
+    groups = ",".join(GROUPS)
+    try:
+        pwd.getpwnam(username)
+    except KeyError:
+        run(["useradd", "-m", "-s", "/bin/bash", "-G", groups, username])
+    else:
+        run(["usermod", "-aG", groups, username])
+
+    entry = pwd.getpwnam(username)
+    home = pathlib.Path(entry.pw_dir)
+    home.mkdir(mode=0o755, parents=True, exist_ok=True)
+    if not any(home.iterdir()) and pathlib.Path("/etc/skel").is_dir():
+        for item in pathlib.Path("/etc/skel").iterdir():
+            target = home / item.name
+            if item.is_dir():
+                shutil.copytree(item, target, symlinks=True, dirs_exist_ok=True)
+            else:
+                shutil.copy2(item, target)
+
+    return entry
+
+
+def set_passwords(username, user_password, admin_password):
+    payload = f"{username}:{user_password}\nroot:{admin_password}\n"
+    run(["chpasswd"], input=payload, text=True)
+
+
+def read_ini(path):
+    parser = configparser.ConfigParser(interpolation=None)
+    parser.optionxform = str
+    if path.exists():
+        parser.read(path)
+    return parser
+
+
+def write_ini(path, parser, uid, gid):
+    path.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        parser.write(handle, space_around_delimiters=False)
+    os.chown(path, uid, gid)
+
+
+def ensure_section(parser, section):
+    if not parser.has_section(section):
+        parser.add_section(section)
+
+
+def apply_theme(entry, theme_id):
+    theme = THEMES[theme_id]
+    config_dir = pathlib.Path(entry.pw_dir) / ".config"
+    config_dir.mkdir(mode=0o755, parents=True, exist_ok=True)
+    os.chown(config_dir, entry.pw_uid, entry.pw_gid)
+
+    kdeglobals = read_ini(config_dir / "kdeglobals")
+    ensure_section(kdeglobals, "General")
+    kdeglobals["General"]["ColorScheme"] = theme["color_scheme"]
+    kdeglobals["General"]["Name"] = theme["name"]
+    ensure_section(kdeglobals, "Icons")
+    kdeglobals["Icons"]["Theme"] = theme["icons"]
+    ensure_section(kdeglobals, "KDE")
+    kdeglobals["KDE"]["widgetStyle"] = "Breeze"
+    write_ini(config_dir / "kdeglobals", kdeglobals, entry.pw_uid, entry.pw_gid)
+
+    plasmarc = read_ini(config_dir / "plasmarc")
+    ensure_section(plasmarc, "Theme")
+    plasmarc["Theme"]["name"] = theme["plasma"]
+    write_ini(config_dir / "plasmarc", plasmarc, entry.pw_uid, entry.pw_gid)
+
+
+def configure_session(username, mode):
+    run(["/usr/bin/thorch-sessionctl", "set", mode, "--user", username, "--stage"])
+
+
+def utc_timestamp():
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def read_state():
+    if not STATE_FILE.exists():
+        return {}
+    try:
+        return json.loads(STATE_FILE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def write_state(state, done=False):
+    STATE_DIR.mkdir(mode=0o755, parents=True, exist_ok=True)
+    state["updatedAt"] = utc_timestamp()
+    STATE_FILE.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+
+    if done:
+        completed_at = state.get("completedAt") or state["updatedAt"]
+        DONE_FILE.write_text(completed_at + "\n", encoding="utf-8")
+    elif DONE_FILE.exists():
+        DONE_FILE.unlink()
+
+
+def save_setup_state(settings, phase, done=False):
+    state = read_state()
+    state.update({
+        "phase": phase,
+        "username": settings["username"],
+        "mode": settings["mode"],
+        "theme": settings["theme"],
+        "installChoice": settings["install_choice"],
+        "internalDataLossAccepted": settings.get("internal_data_loss_accepted", False),
+    })
+    if done:
+        state["completedAt"] = utc_timestamp()
+    else:
+        state.pop("completedAt", None)
+    write_state(state, done=done)
+
+
+def update_phase(phase, done=False):
+    state = read_state()
+    state["phase"] = phase
+    if done:
+        state["completedAt"] = utc_timestamp()
+    else:
+        state.pop("completedAt", None)
+    write_state(state, done=done)
+
+
+def next_action(settings):
+    if settings["install_choice"] == "install-internal":
+        return "install-internal"
+    if settings["install_choice"] == "expand-sd":
+        return "expand-sd"
+    return ""
+
+
+def apply_json():
+    require_root()
+    settings = validate_payload(read_payload())
+    entry = ensure_user(settings["username"])
+    set_passwords(settings["username"], settings["user_password"], settings["admin_password"])
+    apply_theme(entry, settings["theme"])
+    configure_session(settings["username"], settings["mode"])
+
+    action = next_action(settings)
+    save_setup_state(
+        settings,
+        phase="internal-install-ready" if action == "install-internal" else "complete",
+        done=action != "install-internal",
+    )
+
+    message = "Setup is complete. Reboot when you're ready to start Thorch."
+    if action == "install-internal":
+        message = "Your choices are saved. Thorch will install to internal storage next. Keep the SD card inserted until it finishes."
+    elif action == "expand-sd":
+        message = "Setup is complete. You can use the rest of the SD card next."
+
+    print(json.dumps({"ok": True, "message": message, "nextAction": action}, separators=(",", ":")))
+
+
+def nmcli_unescape(value):
+    out = []
+    escaped = False
+    for char in value:
+        if escaped:
+            out.append(char)
+            escaped = False
+        elif char == "\\":
+            escaped = True
+        else:
+            out.append(char)
+    if escaped:
+        out.append("\\")
+    return "".join(out)
+
+
+def split_nmcli_line(line):
+    fields = []
+    current = []
+    escaped = False
+    for char in line.rstrip("\n"):
+        if escaped:
+            current.append("\\" + char)
+            escaped = False
+        elif char == "\\":
+            escaped = True
+        elif char == ":":
+            fields.append(nmcli_unescape("".join(current)))
+            current = []
+        else:
+            current.append(char)
+    if escaped:
+        current.append("\\")
+    fields.append(nmcli_unescape("".join(current)))
+    return fields
+
+
+def wifi_scan_json():
+    if not shutil.which("nmcli"):
+        emit_json(False, "Wi-Fi setup tools are not available on this system.", code=1, networks=[])
+
+    proc = subprocess.run(
+        ["nmcli", "-t", "-f", "IN-USE,SSID,SECURITY,SIGNAL", "device", "wifi", "list", "--rescan", "yes"],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        message = (proc.stderr or proc.stdout or "Wi-Fi scan failed.").strip()
+        emit_json(False, message, code=proc.returncode or 1, networks=[])
+
+    seen = set()
+    networks = []
+    for line in proc.stdout.splitlines():
+        fields = split_nmcli_line(line)
+        if len(fields) < 4:
+            continue
+        active, ssid, security, signal = fields[:4]
+        ssid = ssid.strip()
+        if not ssid or ssid in seen:
+            continue
+        seen.add(ssid)
+        try:
+            signal_value = int(signal)
+        except ValueError:
+            signal_value = 0
+        networks.append({
+            "ssid": ssid,
+            "security": security.strip(),
+            "signal": signal_value,
+            "active": active.strip() == "*",
+        })
+
+    networks.sort(key=lambda item: (not item["active"], -item["signal"], item["ssid"].lower()))
+    if not networks:
+        message = "No Wi-Fi networks found."
+    else:
+        suffix = "" if len(networks) == 1 else "s"
+        message = f"Found {len(networks)} Wi-Fi network{suffix}."
+    emit_json(True, message, networks=networks)
+
+
+def wifi_connect_json():
+    require_root()
+    payload = read_payload()
+    ssid = string_field(payload, "ssid").strip()
+    password = string_field(payload, "password")
+
+    if not ssid:
+        emit_json(False, "Choose a Wi-Fi network first.", code=1)
+    if "\n" in ssid or "\n" in password:
+        emit_json(False, "Wi-Fi fields must not contain newlines.", code=1)
+    if not shutil.which("nmcli"):
+        emit_json(False, "Wi-Fi setup tools are not available on this system.", code=1)
+
+    command = ["nmcli", "device", "wifi", "connect", ssid]
+    if password:
+        command.extend(["password", password])
+
+    rc, output = run_capture(command)
+    if rc == 0:
+        emit_json(True, f"Connected to {ssid}.", output=output)
+    emit_json(False, output or f"Could not connect to {ssid}.", code=rc or 1, output=output)
+
+
+def install_internal_json():
+    require_root()
+    if not pathlib.Path("/usr/bin/thorch-install-internal").exists():
+        emit_json(False, "Internal storage setup is not available on this system.", code=1)
+
+    rc, output = run_capture(["/usr/bin/thorch-install-internal"], input_text="INSTALL THORCH\n")
+    if rc == 0:
+        update_phase("internal-install-complete-remove-sd", done=False)
+        emit_json(True, "Thorch has been copied to internal storage. Remove the SD card, then reboot.", output=output)
+    emit_json(False, "Installing to internal storage failed.", code=rc or 1, output=output)
+
+
+PHASE_PROGRESS = {
+    "format": 8,
+    "copy-root": 18,
+    "copy-boot": 72,
+    "mkinitcpio": 80,
+    "rebuild-boot": 90,
+    "check-boot": 95,
+    "sync": 98,
+}
+
+PHASE_MESSAGES = {
+    "format": "Preparing internal storage.",
+    "copy-root": "Copying Thorch to internal storage.",
+    "copy-boot": "Copying boot files.",
+    "mkinitcpio": "Preparing the internal startup files.",
+    "rebuild-boot": "Preparing the boot image.",
+    "check-boot": "Checking the internal boot files.",
+    "sync": "Finishing writes to disk.",
+}
+
+RSYNC_PROGRESS_RANGES = {
+    "copy-root": (18, 72),
+    "copy-boot": (72, 80),
+}
+
+
+def install_progress_from_line(line, phase, current_progress):
+    marker = re.search(r":: thorch-install phase=([a-z-]+)", line)
+    if marker:
+        phase = marker.group(1)
+        return phase, max(current_progress, PHASE_PROGRESS.get(phase, current_progress)), PHASE_MESSAGES.get(phase, "Installing Thorch."), True
+
+    percent_match = re.search(r"(\d{1,3})%", line)
+    if percent_match and phase in RSYNC_PROGRESS_RANGES:
+        percent = min(100, max(0, int(percent_match.group(1))))
+        start, end = RSYNC_PROGRESS_RANGES[phase]
+        progress = start + int((end - start) * (percent / 100.0))
+        return phase, max(current_progress, progress), f"{PHASE_MESSAGES.get(phase, 'Copying files')} {percent}%.", True
+
+    return phase, current_progress, "", False
+
+
+def install_internal_stream_json():
+    require_root()
+    installer = pathlib.Path("/usr/bin/thorch-install-internal")
+    if not installer.exists():
+        emit_json(False, "Internal storage setup is not available on this system.", code=1)
+
+    env = os.environ.copy()
+    env["THORCH_INSTALL_PROGRESS"] = "1"
+    env.setdefault("LANG", "C.UTF-8")
+    env.setdefault("LC_ALL", "C.UTF-8")
+
+    emit_event(event="progress", progress=2, message="Starting the internal storage install.", output="")
+    try:
+        proc = subprocess.Popen(
+            [str(installer)],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            env=env,
+        )
+    except OSError as exc:
+        emit_json(False, f"Could not start the internal storage install: {exc}", code=1)
+
+    try:
+        proc.stdin.write("INSTALL THORCH\n")
+        proc.stdin.close()
+    except (BrokenPipeError, OSError, AttributeError):
+        pass
+
+    phase = "start"
+    progress = 2
+    output_lines = []
+    pending = []
+    last_emitted_progress = progress
+    last_emitted_message = "Starting the internal storage install."
+
+    def handle_token(token):
+        nonlocal phase, progress, last_emitted_progress, last_emitted_message
+        line = token.strip()
+        if not line:
+            return
+
+        phase, new_progress, message, should_emit = install_progress_from_line(line, phase, progress)
+        progress = new_progress
+
+        is_marker = line.startswith(":: thorch-install")
+        is_rsync_progress = re.search(r"\d{1,3}%", line) is not None
+        if not is_marker and not is_rsync_progress:
+            output_lines.append(line)
+            del output_lines[:-160]
+
+        if should_emit and (progress != last_emitted_progress or message != last_emitted_message):
+            last_emitted_progress = progress
+            last_emitted_message = message
+            emit_event(
+                event="progress",
+                progress=progress,
+                message=message,
+                output="\n".join(output_lines[-60:]),
+            )
+
+    if proc.stdout is not None:
+        while True:
+            char = proc.stdout.read(1)
+            if char == "":
+                break
+            if char in "\r\n":
+                handle_token("".join(pending))
+                pending = []
+            else:
+                pending.append(char)
+        handle_token("".join(pending))
+
+    rc = proc.wait()
+    output = "\n".join(output_lines)
+    if rc == 0:
+        update_phase("internal-install-complete-remove-sd", done=False)
+        emit_json(
+            True,
+            "Thorch has been copied to internal storage. Remove the SD card, then reboot.",
+            output=output,
+            progress=100,
+        )
+    emit_json(False, "Installing to internal storage failed.", code=rc or 1, output=output, progress=progress)
+
+
+def expand_sd_json():
+    require_root()
+    if not pathlib.Path("/usr/bin/thorch-expand-root").exists():
+        emit_json(False, "SD card expansion is not available on this system.", code=1)
+
+    rc, output = run_capture(["/usr/bin/thorch-expand-root", "--yes"])
+    if rc == 0:
+        emit_json(True, "The SD card is ready to use its full space.", output=output)
+    emit_json(False, "Using the full SD card failed.", code=rc or 1, output=output)
+
+
+def finish_json():
+    require_root()
+    update_phase("complete", done=True)
+    emit_json(True, "Setup is complete. Reboot when you're ready to start Thorch.")
+
+
+def usage():
+    print("usage: thorch-firstbootctl apply-json|wifi-scan-json|wifi-connect-json|install-internal-json|install-internal-stream-json|expand-sd-json|finish-json", file=sys.stderr)
+    raise SystemExit(2)
+
+
+def main():
+    if len(sys.argv) == 2 and sys.argv[1] == "apply-json":
+        apply_json()
+        return 0
+    if len(sys.argv) == 2 and sys.argv[1] == "wifi-scan-json":
+        wifi_scan_json()
+        return 0
+    if len(sys.argv) == 2 and sys.argv[1] == "wifi-connect-json":
+        wifi_connect_json()
+        return 0
+    if len(sys.argv) == 2 and sys.argv[1] == "install-internal-json":
+        install_internal_json()
+        return 0
+    if len(sys.argv) == 2 and sys.argv[1] == "install-internal-stream-json":
+        install_internal_stream_json()
+        return 0
+    if len(sys.argv) == 2 and sys.argv[1] == "expand-sd-json":
+        expand_sd_json()
+        return 0
+    if len(sys.argv) == 2 and sys.argv[1] == "finish-json":
+        finish_json()
+        return 0
+    usage()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
