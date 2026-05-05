@@ -17,6 +17,4 @@ package() {
   chmod 755 "${pkgdir}/usr/bin/thorch-expand-root-launcher"
   chmod 755 "${pkgdir}/usr/bin/thorch-install-internal"
   chmod 755 "${pkgdir}/usr/bin/thorch-install-internal-launcher"
-  chmod 755 "${pkgdir}/etc/skel/Desktop/thorch-expand-root.desktop"
-  chmod 755 "${pkgdir}/etc/skel/Desktop/thorch-install-internal.desktop"
 }

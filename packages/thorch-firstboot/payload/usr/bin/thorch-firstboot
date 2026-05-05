@@ -16,6 +16,7 @@ QML_FILE = os.environ.get("THORCH_FIRSTBOOT_QML", "/usr/share/thorch/firstboot/q
 HELPER = os.environ.get("THORCH_FIRSTBOOT_CTL", "/usr/bin/thorch-firstbootctl")
 NO_PKEXEC = os.environ.get("THORCH_FIRSTBOOT_NO_PKEXEC") == "1"
 MOCK_REBOOT = os.environ.get("THORCH_FIRSTBOOT_MOCK_REBOOT") == "1"
+STEAM_SETUP_CMD = os.environ.get("THORCH_FIRSTBOOT_STEAM_SETUP_CMD", "thorch-install-gaming-stack")
 
 
 def load_state_file():
@@ -280,7 +281,7 @@ class Backend(QObject):
             command = [
                 "/usr/bin/bash",
                 "-lc",
-                os.environ.get("THORCH_FIRSTBOOT_STEAM_SETUP_CMD", "thorch-install-fex && thorch-install-steam-arm64 --yes"),
+                STEAM_SETUP_CMD,
             ]
             start_message = "Installing Steam support. This can take a while."
             streaming = False
@@ -299,7 +300,7 @@ class Backend(QObject):
                 setup_command = [
                     "/usr/bin/bash",
                     "-lc",
-                    os.environ.get("THORCH_FIRSTBOOT_STEAM_SETUP_CMD", "thorch-install-fex && thorch-install-steam-arm64 --yes"),
+                    STEAM_SETUP_CMD,
                 ]
                 ok, output, result = self._run_command(setup_command)
                 if not ok:
