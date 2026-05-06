@@ -10,7 +10,7 @@ SetupPage {
     required property int optionMaxWidth
 
     title: qsTr("Connect to Wi-Fi")
-    description: qsTr("You can skip this for now, but Wi-Fi is recommended before installing Steam support or updates.")
+    description: qsTr("You can skip this for now, but Wi-Fi is recommended before installing Steam, Waydroid, or updates.")
     bodySpacing: 20
 
     RowLayout {

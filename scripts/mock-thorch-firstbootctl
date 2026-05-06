@@ -67,16 +67,25 @@ def apply_json():
         "theme": payload.get("theme", "thorch-oled"),
         "installChoice": install_choice,
         "internalDataLossAccepted": bool(payload.get("internalDataLossAccepted")),
+        "installWaydroid": bool(payload.get("installWaydroid")),
     }
     if install_choice == "install-internal":
         state["phase"] = "internal-install-ready"
         write_state(state, done=False)
         emit(True, "Mock: choices saved. Installing to internal storage next.", nextAction="install-internal")
     if install_choice == "expand-sd":
-        state["phase"] = "complete"
-        state["completedAt"] = now()
-        write_state(state, done=True)
+        state["phase"] = "expand-sd-ready" if state["installWaydroid"] else "complete"
+        if state["installWaydroid"]:
+            write_state(state, done=False)
+        else:
+            state["completedAt"] = now()
+            write_state(state, done=True)
         emit(True, "Mock: setup complete. You can use the rest of the SD card next.", nextAction="expand-sd")
+
+    if state["installWaydroid"]:
+        state["phase"] = "waydroid-setup-ready"
+        write_state(state, done=False)
+        emit(True, "Mock: choices saved. Android app support will install next.", nextAction="waydroid-setup")
 
     state["phase"] = "complete"
     state["completedAt"] = now()
@@ -133,7 +142,20 @@ def install_internal_json():
 
 
 def expand_sd_json():
+    state = read_state()
+    if state.get("installWaydroid") and not state.get("waydroidSetupDone"):
+        state["phase"] = "waydroid-setup-ready"
+        write_state(state, done=False)
     emit(True, "Mock: the SD card is ready to use its full space.", output="Mock growpart + resize2fs complete.")
+
+
+def mark_waydroid_json():
+    state = read_state()
+    state["waydroidSetupDone"] = True
+    if state.get("phase") == "waydroid-setup-ready":
+        state["phase"] = "waydroid-setup-complete"
+    write_state(state, done=False)
+    emit(True, "Mock: Android app support is installed.")
 
 
 def finish_json():
@@ -155,6 +177,7 @@ def main():
         "install-internal-json": install_internal_json,
         "install-internal-stream-json": install_internal_stream_json,
         "expand-sd-json": expand_sd_json,
+        "mark-waydroid-json": mark_waydroid_json,
         "finish-json": finish_json,
     }
     action = actions.get(sys.argv[1])

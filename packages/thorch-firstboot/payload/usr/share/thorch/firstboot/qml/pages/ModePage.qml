@@ -41,7 +41,7 @@ SetupPage {
         Layout.maximumWidth: page.optionMaxWidth
 
         Label {
-            text: qsTr("When Steam closes, open")
+            text: qsTr("Bottom screen environment")
             color: "#89a0aa"
             font.pixelSize: 18
         }

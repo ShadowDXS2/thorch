@@ -159,6 +159,7 @@ class Backend(QObject):
             "finish-firstboot": "Mock: finishing setup.",
             "finish-and-launch-steam": "Mock: finishing setup and launching Steam.",
             "steam-setup": "Mock: installing Steam support.",
+            "waydroid-setup": "Mock: installing Android app support.",
         }
         self.postActionStarted.emit(True, labels.get(action, f"Mock: starting {action}."))
 
@@ -178,6 +179,11 @@ class Backend(QObject):
                 ok = True
                 message = "Mock: Steam support is installed."
                 result = {"output": "Mock: FEX ready\nMock: Steam launcher ready"}
+            elif action == "waydroid-setup":
+                ok, message, result = self._run_helper("mark-waydroid-json")
+                if ok:
+                    message = "Mock: Android app support is installed."
+                    result = {"output": "Mock: Waydroid package installed\nMock: Android images initialized"}
             else:
                 ok = False
                 message = f"Mock: unsupported action {action}"

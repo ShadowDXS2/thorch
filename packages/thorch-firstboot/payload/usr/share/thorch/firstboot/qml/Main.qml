@@ -146,6 +146,15 @@ ApplicationWindow {
             padBottom: root.contentPadBottom
         }
 
+        AndroidPage {
+            flow: flow
+            pageWidth: root.pageContentWidth()
+            optionMaxWidth: root.optionMaxWidth
+            padX: root.contentPadX
+            padTop: root.contentPadTop
+            padBottom: root.contentPadBottom
+        }
+
         AccountPage {
             flow: flow
             pageWidth: root.pageContentWidth()

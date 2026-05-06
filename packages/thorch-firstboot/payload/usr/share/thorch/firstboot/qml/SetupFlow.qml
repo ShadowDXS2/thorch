@@ -5,8 +5,8 @@ QtObject {
 
     required property var backend
 
-    readonly property int applyPage: 5
-    readonly property int donePage: 6
+    readonly property int applyPage: 6
+    readonly property int donePage: 7
 
     property int page: 0
     property var wifiNetworks: []
@@ -19,6 +19,9 @@ QtObject {
     property string installChoice: "live-sd"
     property string modeChoice: "desktop"
     property string steamCompanion: "mobile"
+    property bool installWaydroid: false
+    property bool waydroidChoiceTouched: false
+    property bool waydroidSetupDone: false
     property string themeChoice: "thorch-oled"
     property string username: "thorch"
     property string password: ""
@@ -34,6 +37,7 @@ QtObject {
     property int postActionProgressValue: 0
     property string postActionProgressMessage: ""
     property bool autoInternalInstallStarted: false
+    property string pendingAutoPostAction: ""
     property bool internalDataLossAccepted: false
     property var savedState: backend.initialState || ({})
     property string bootRole: backend.initialBootRole || "unknown"
@@ -72,6 +76,27 @@ QtObject {
         return activeMode().indexOf("steamos") === 0;
     }
 
+    function hasNetwork() {
+        return wifiConnectedSsid.length > 0;
+    }
+
+    function wantsWaydroidSetup() {
+        return installWaydroid && !waydroidSetupDone;
+    }
+
+    function updateWaydroidDefault() {
+        if (!waydroidChoiceTouched) {
+            installWaydroid = hasNetwork();
+        }
+    }
+
+    function waydroidChoiceLabel() {
+        if (waydroidSetupDone) {
+            return qsTr("Installed");
+        }
+        return installWaydroid ? qsTr("Install during setup") : qsTr("Install later");
+    }
+
     function storageChoiceLabel(choice) {
         if (choice === "install-internal") {
             return qsTr("Install to internal storage");
@@ -87,10 +112,10 @@ QtObject {
             return qsTr("Mobile");
         }
         if (mode === "steamos-desktop") {
-            return qsTr("Steam, then KDE Desktop");
+            return qsTr("Steam on top, KDE Desktop below");
         }
         if (mode === "steamos-mobile" || mode === "steamos") {
-            return qsTr("Steam, then Plasma Mobile");
+            return qsTr("Steam on top, Plasma Mobile below");
         }
         return qsTr("Desktop");
     }
@@ -117,19 +142,52 @@ QtObject {
             || (savedState && savedState.internalDataLossAccepted === true);
     }
 
+    function canAutoStartPostAction(action) {
+        if (!action || action.length === 0) {
+            return false;
+        }
+        if (action === "install-internal") {
+            return !secondStage && !removeSdStage && installWarningAccepted();
+        }
+        if (action === "expand-sd") {
+            return !secondStage && !removeSdStage;
+        }
+        if (action === "waydroid-setup") {
+            return !removeSdStage && wantsWaydroidSetup();
+        }
+        return false;
+    }
+
+    function shouldAutoStartPostAction(action) {
+        return action && action.length > 0
+            && canAutoStartPostAction(action)
+            && !postActionRunning
+            && !postActionFailed
+            && activePostAction.length === 0;
+    }
+
+    function scheduleAutomaticPostAction(action) {
+        if (shouldAutoStartPostAction(action)) {
+            pendingAutoPostAction = action;
+            autoPostActionTimer.restart();
+        }
+    }
+
     function runPostAction(action) {
+        if (!action || action.length === 0 || postActionRunning) {
+            return;
+        }
+        pendingAutoPostAction = "";
+        if (action === "install-internal") {
+            autoInternalInstallStarted = true;
+        }
         activePostAction = action;
         backend.launchPostAction(action);
     }
 
     function scheduleInternalInstall() {
-        if (!autoInternalInstallStarted
-                && nextAction === "install-internal"
-                && !secondStage
-                && !removeSdStage
-                && installWarningAccepted()
-                && !postActionRunning) {
-            autoInternalInstallTimer.restart();
+        if (!autoInternalInstallStarted && nextAction === "install-internal") {
+            scheduleAutomaticPostAction("install-internal");
         }
     }
 
@@ -149,6 +207,13 @@ QtObject {
         if (state.internalDataLossAccepted === true) {
             internalDataLossAccepted = true;
         }
+        if (state.installWaydroid === true || state.installWaydroid === false) {
+            installWaydroid = state.installWaydroid;
+            waydroidChoiceTouched = true;
+        }
+        if (state.waydroidSetupDone === true) {
+            waydroidSetupDone = true;
+        }
         if (state.mode === "desktop" || state.mode === "mobile") {
             modeChoice = state.mode;
         } else if (state.mode === "steamos-desktop" || state.mode === "steamos-mobile") {
@@ -164,10 +229,12 @@ QtObject {
         if ((state.phase === "internal-install-ready" || state.phase === "internal-install-complete-remove-sd") && bootRole === "internal") {
             applied = true;
             secondStage = true;
+            nextAction = wantsWaydroidSetup() ? "waydroid-setup" : "";
             resultMessage = wantsSteamSetup()
-                ? qsTr("You're now running from internal storage. Install Steam support next, then finish setup.")
+                ? qsTr("You're now running from internal storage. Finish the remaining setup actions next.")
                 : qsTr("You're now running from internal storage. Finish setup to keep these choices.");
             page = donePage;
+            scheduleAutomaticPostAction(nextAction);
         } else if (state.phase === "internal-install-ready") {
             applied = true;
             nextAction = "install-internal";
@@ -181,6 +248,20 @@ QtObject {
             removeSdStage = true;
             resultMessage = qsTr("Thorch has been copied to internal storage. Remove the SD card, then reboot.");
             page = donePage;
+        } else if (state.phase === "expand-sd-ready") {
+            applied = true;
+            nextAction = "expand-sd";
+            resultMessage = qsTr("Using the rest of the SD card now, then Android app support will install.");
+            page = donePage;
+            scheduleAutomaticPostAction(nextAction);
+        } else if (state.phase === "waydroid-setup-ready" || state.phase === "waydroid-setup-complete") {
+            applied = true;
+            nextAction = state.phase === "waydroid-setup-complete" ? "" : "waydroid-setup";
+            resultMessage = state.phase === "waydroid-setup-complete"
+                ? qsTr("Android app support is installed. Finish setup when you're ready.")
+                : qsTr("Installing Android app support now.");
+            page = donePage;
+            scheduleAutomaticPostAction(nextAction);
         }
     }
 
@@ -189,7 +270,7 @@ QtObject {
     }
 
     function canContinue() {
-        if (page === 3) {
+        if (page === 4) {
             if (!validUsername() || password.length === 0 || password !== confirmPassword) {
                 return false;
             }
@@ -209,7 +290,8 @@ QtObject {
             "theme": themeChoice,
             "username": username,
             "password": password,
-            "internalDataLossAccepted": internalDataLossAccepted
+            "internalDataLossAccepted": internalDataLossAccepted,
+            "installWaydroid": installWaydroid
         });
     }
 
@@ -220,13 +302,14 @@ QtObject {
         backend.scanWifi();
     }
 
-    property Timer autoInternalInstallTimer: Timer {
+    property Timer autoPostActionTimer: Timer {
         interval: 700
         repeat: false
         onTriggered: {
-            if (flow.nextAction === "install-internal" && !flow.secondStage && !flow.removeSdStage && flow.installWarningAccepted() && !flow.postActionRunning) {
-                flow.autoInternalInstallStarted = true;
-                flow.runPostAction("install-internal");
+            const action = flow.pendingAutoPostAction;
+            flow.pendingAutoPostAction = "";
+            if (flow.shouldAutoStartPostAction(action)) {
+                flow.runPostAction(action);
             }
         }
     }
@@ -244,6 +327,8 @@ QtObject {
                 if (action === "install-internal") {
                     flow.resultMessage = qsTr("Your choices are saved. Installing Thorch to internal storage now. Keep the SD card inserted until this finishes.");
                     flow.scheduleInternalInstall();
+                } else {
+                    flow.scheduleAutomaticPostAction(action);
                 }
             }
         }
@@ -261,6 +346,7 @@ QtObject {
                     break;
                 }
             }
+            flow.updateWaydroidDefault();
         }
 
         function onWifiConnectFinished(ok, message) {
@@ -268,6 +354,7 @@ QtObject {
             flow.wifiMessage = message;
             if (ok) {
                 flow.wifiConnectedSsid = flow.selectedWifiSsid();
+                flow.updateWaydroidDefault();
                 flow.backend.scanWifi();
             }
         }
@@ -293,21 +380,42 @@ QtObject {
         }
 
         function onPostActionFinished(ok, message, output) {
+            const finishedAction = flow.activePostAction;
+            let followupAction = "";
             flow.postActionRunning = false;
             flow.resultMessage = message;
             flow.postActionOutput = output;
             flow.postActionFailed = !ok;
             flow.postActionProgressValue = ok ? 100 : flow.postActionProgressValue;
             flow.postActionProgressMessage = message;
-            if (ok && flow.activePostAction === "install-internal") {
+            if (ok && finishedAction === "install-internal") {
                 flow.removeSdStage = true;
                 flow.nextAction = "";
             }
-            if (ok && (flow.activePostAction === "finish-firstboot" || flow.activePostAction === "finish-and-launch-steam")) {
+            if (ok && finishedAction === "expand-sd" && flow.wantsWaydroidSetup()) {
+                flow.nextAction = "waydroid-setup";
+                flow.resultMessage = qsTr("The SD card is ready. Installing Android app support next.");
+                followupAction = "waydroid-setup";
+            } else if (ok && finishedAction === "expand-sd") {
+                flow.nextAction = "";
+            }
+            if (ok && finishedAction === "waydroid-setup") {
+                flow.waydroidSetupDone = true;
+                if (flow.nextAction === "waydroid-setup") {
+                    flow.nextAction = "";
+                }
+            }
+            if (ok && (finishedAction === "finish-firstboot" || finishedAction === "finish-and-launch-steam")) {
                 flow.secondStage = false;
                 flow.removeSdStage = false;
             }
             flow.activePostAction = "";
+            if (ok && followupAction.length > 0) {
+                flow.scheduleAutomaticPostAction(followupAction);
+            }
+            if (ok && finishedAction === "waydroid-setup" && !flow.secondStage) {
+                flow.runPostAction("finish-firstboot");
+            }
         }
 
         function onRebootStarted(ok, message) {

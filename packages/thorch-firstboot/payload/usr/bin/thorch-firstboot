@@ -5,9 +5,20 @@ import subprocess
 import sys
 import threading
 
-from PySide6.QtCore import QObject, Property, QUrl, Signal, Slot
-from PySide6.QtGui import QGuiApplication
-from PySide6.QtQml import QQmlApplicationEngine
+try:
+    from PyQt6.QtCore import (
+        QObject,
+        QUrl,
+        pyqtProperty as Property,
+        pyqtSignal as Signal,
+        pyqtSlot as Slot,
+    )
+    from PyQt6.QtGui import QGuiApplication
+    from PyQt6.QtQml import QQmlApplicationEngine
+except ImportError:
+    from PySide6.QtCore import QObject, Property, QUrl, Signal, Slot
+    from PySide6.QtGui import QGuiApplication
+    from PySide6.QtQml import QQmlApplicationEngine
 
 
 DONE_FILE = os.environ.get("THORCH_FIRSTBOOT_DONE_FILE", "/var/lib/thorch/firstboot/done")
@@ -17,6 +28,7 @@ HELPER = os.environ.get("THORCH_FIRSTBOOT_CTL", "/usr/bin/thorch-firstbootctl")
 NO_PKEXEC = os.environ.get("THORCH_FIRSTBOOT_NO_PKEXEC") == "1"
 MOCK_REBOOT = os.environ.get("THORCH_FIRSTBOOT_MOCK_REBOOT") == "1"
 STEAM_SETUP_CMD = os.environ.get("THORCH_FIRSTBOOT_STEAM_SETUP_CMD", "thorch-install-gaming-stack")
+WAYDROID_SETUP_CMD = os.environ.get("THORCH_FIRSTBOOT_WAYDROID_SETUP_CMD", "thorch-install-waydroid --yes")
 
 
 def load_state_file():
@@ -285,6 +297,15 @@ class Backend(QObject):
             ]
             start_message = "Installing Steam support. This can take a while."
             streaming = False
+        elif action == "waydroid-setup":
+            helper_action = None
+            command = [
+                "/usr/bin/bash",
+                "-lc",
+                WAYDROID_SETUP_CMD,
+            ]
+            start_message = "Installing Android app support. This downloads Waydroid images and can take a while."
+            streaming = False
         else:
             self.postActionStarted.emit(False, "There is nothing else to run from here.")
             return
@@ -324,11 +345,22 @@ class Backend(QObject):
                     message = "Steam is launching." if ok else output or "Steam setup is complete, but Steam could not be started."
             else:
                 ok, output, result = self._run_command(command)
-                message = (
-                    "Steam support is installed. Steam will start after reboot."
-                    if ok else
-                    "Steam setup failed. Review the output, connect Wi-Fi if needed, then try again."
-                )
+                if action == "waydroid-setup":
+                    if ok:
+                        mark_ok, mark_message, mark_result = self._run_helper("mark-waydroid-json")
+                        ok = mark_ok
+                        result["output"] = "\n".join(
+                            part for part in (result.get("output", ""), mark_result.get("output", "")) if part
+                        )
+                        message = "Android app support is installed." if mark_ok else mark_message
+                    else:
+                        message = "Waydroid setup failed. Review the output, connect Wi-Fi if needed, then try again."
+                else:
+                    message = (
+                        "Steam support is installed. Steam will start after reboot."
+                        if ok else
+                        "Steam setup failed. Review the output, connect Wi-Fi if needed, then try again."
+                    )
             self._done = os.path.exists(DONE_FILE)
             self._state = self._load_state()
             self.postActionFinished.emit(ok, message, result.get("output", ""))

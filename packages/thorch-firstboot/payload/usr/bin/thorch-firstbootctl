@@ -117,6 +117,7 @@ def validate_payload(payload):
     theme = string_field(payload, "theme", "thorch-oled")
     install_choice = string_field(payload, "installChoice", "live-sd")
     internal_data_loss_accepted = bool_field(payload, "internalDataLossAccepted")
+    install_waydroid = bool_field(payload, "installWaydroid")
 
     if not USER_RE.match(username):
         fail("Username must start with a lowercase letter or underscore and use only lowercase letters, numbers, hyphen, or underscore.")
@@ -149,6 +150,7 @@ def validate_payload(payload):
         "theme": theme,
         "install_choice": install_choice,
         "internal_data_loss_accepted": internal_data_loss_accepted,
+        "install_waydroid": install_waydroid,
     }
 
 
@@ -269,6 +271,7 @@ def save_setup_state(settings, phase, done=False):
         "theme": settings["theme"],
         "installChoice": settings["install_choice"],
         "internalDataLossAccepted": settings.get("internal_data_loss_accepted", False),
+        "installWaydroid": settings.get("install_waydroid", False),
     })
     if done:
         state["completedAt"] = utc_timestamp()
@@ -292,6 +295,8 @@ def next_action(settings):
         return "install-internal"
     if settings["install_choice"] == "expand-sd":
         return "expand-sd"
+    if settings.get("install_waydroid"):
+        return "waydroid-setup"
     return ""
 
 
@@ -304,17 +309,27 @@ def apply_json():
     configure_session(settings["username"], settings["mode"])
 
     action = next_action(settings)
-    save_setup_state(
-        settings,
-        phase="internal-install-ready" if action == "install-internal" else "complete",
-        done=action != "install-internal",
-    )
+    if action == "install-internal":
+        phase = "internal-install-ready"
+    elif settings.get("install_waydroid") and action == "expand-sd":
+        phase = "expand-sd-ready"
+    elif settings.get("install_waydroid"):
+        phase = "waydroid-setup-ready"
+    else:
+        phase = "complete"
+
+    save_setup_state(settings, phase=phase, done=not settings.get("install_waydroid") and action != "install-internal")
 
     message = "Setup is complete. Reboot when you're ready to start Thorch."
     if action == "install-internal":
         message = "Your choices are saved. Thorch will install to internal storage next. Keep the SD card inserted until it finishes."
     elif action == "expand-sd":
-        message = "Setup is complete. You can use the rest of the SD card next."
+        if settings.get("install_waydroid"):
+            message = "Your choices are saved. Use the rest of the SD card next, then install Android app support."
+        else:
+            message = "Setup is complete. You can use the rest of the SD card next."
+    elif action == "waydroid-setup":
+        message = "Your choices are saved. Android app support will install next."
 
     print(json.dumps({"ok": True, "message": message, "nextAction": action}, separators=(",", ":")))
 
@@ -573,8 +588,23 @@ def expand_sd_json():
 
     rc, output = run_capture(["/usr/bin/thorch-expand-root", "--yes"])
     if rc == 0:
+        state = read_state()
+        if state.get("installWaydroid") and not state.get("waydroidSetupDone"):
+            update_phase("waydroid-setup-ready", done=False)
+        elif state:
+            update_phase("complete", done=True)
         emit_json(True, "The SD card is ready to use its full space.", output=output)
     emit_json(False, "Using the full SD card failed.", code=rc or 1, output=output)
+
+
+def mark_waydroid_json():
+    require_root()
+    state = read_state()
+    state["waydroidSetupDone"] = True
+    if state.get("phase") == "waydroid-setup-ready":
+        state["phase"] = "waydroid-setup-complete"
+    write_state(state, done=False)
+    emit_json(True, "Android app support is installed.")
 
 
 def finish_json():
@@ -584,7 +614,7 @@ def finish_json():
 
 
 def usage():
-    print("usage: thorch-firstbootctl apply-json|wifi-scan-json|wifi-connect-json|install-internal-json|install-internal-stream-json|expand-sd-json|finish-json", file=sys.stderr)
+    print("usage: thorch-firstbootctl apply-json|wifi-scan-json|wifi-connect-json|install-internal-json|install-internal-stream-json|expand-sd-json|mark-waydroid-json|finish-json", file=sys.stderr)
     raise SystemExit(2)
 
 
@@ -606,6 +636,9 @@ def main():
         return 0
     if len(sys.argv) == 2 and sys.argv[1] == "expand-sd-json":
         expand_sd_json()
+        return 0
+    if len(sys.argv) == 2 and sys.argv[1] == "mark-waydroid-json":
+        mark_waydroid_json()
         return 0
     if len(sys.argv) == 2 and sys.argv[1] == "finish-json":
         finish_json()

@@ -33,6 +33,11 @@ SetupPage {
         }
 
         ReviewRow {
+            label: qsTr("Android apps")
+            value: page.flow.waydroidChoiceLabel()
+        }
+
+        ReviewRow {
             label: qsTr("User")
             value: page.flow.username
         }

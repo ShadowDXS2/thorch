@@ -6,9 +6,10 @@ pkgrel=1
 pkgdesc='QML setup assistant for Thorch'
 arch=(aarch64)
 license=(GPL-2.0-or-later)
-depends=(bash coreutils grep networkmanager polkit polkit-kde-agent pyside6 python qt6-declarative shadow sddm systemd thorch-kde-defaults)
+depends=(bash coreutils grep networkmanager polkit polkit-kde-agent python python-pyqt6 qt6-declarative shadow sddm systemd thorch-kde-defaults)
 optdepends=('thorch-installer: SD card expansion and internal storage setup actions'
-            'thorch-gaming-installers: Steam mode setup and autostart')
+            'thorch-gaming-installers: Steam mode setup and autostart'
+            'thorch-waydroid-installer: first-boot Android app support setup')
 source=()
 sha256sums=()
 

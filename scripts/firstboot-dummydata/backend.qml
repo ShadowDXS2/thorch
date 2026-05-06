@@ -39,13 +39,32 @@ Item {
                 "theme": config.theme,
                 "installChoice": "install-internal",
                 "phase": "internal-install-ready",
-                "internalDataLossAccepted": true
+                "internalDataLossAccepted": true,
+                "installWaydroid": config.installWaydroid
             };
             applyFinished(true, "Mock: choices saved. Installing to internal storage next.", "install-internal");
             return;
         }
         if (config.installChoice === "expand-sd") {
+            initialState = {
+                "mode": config.mode,
+                "theme": config.theme,
+                "installChoice": "expand-sd",
+                "phase": config.installWaydroid ? "expand-sd-ready" : "complete",
+                "installWaydroid": config.installWaydroid
+            };
             applyFinished(true, "Mock: setup saved. You can use the rest of the SD card next.", "expand-sd");
+            return;
+        }
+        if (config.installWaydroid) {
+            initialState = {
+                "mode": config.mode,
+                "theme": config.theme,
+                "installChoice": config.installChoice,
+                "phase": "waydroid-setup-ready",
+                "installWaydroid": true
+            };
+            applyFinished(true, "Mock: setup saved. Android app support will install next.", "waydroid-setup");
             return;
         }
         done = true;
@@ -70,6 +89,12 @@ Item {
         if (action === "steam-setup") {
             postActionStarted(true, "Mock: installing Steam support.");
             postActionFinished(true, "Mock: Steam support is installed.", "Mock: FEX ready\nMock: Steam launcher ready");
+            return;
+        }
+        if (action === "waydroid-setup") {
+            initialState.waydroidSetupDone = true;
+            postActionStarted(true, "Mock: installing Android app support.");
+            postActionFinished(true, "Mock: Android app support is installed.", "Mock: Waydroid package installed\nMock: Android images initialized");
             return;
         }
         if (action === "finish-and-launch-steam") {
