@@ -221,6 +221,9 @@ Ambient RGB mirroring is installed but left disabled for experiments. Start it
 with `sudo systemctl start thorch-rgb-ambient.service`; enable it only after it
 behaves well on the target hardware.
 
+Fan curve tuning is documented in [docs/fancontrol.md](docs/fancontrol.md),
+including the built-in quiet/moderate/aggressive profiles and custom
+temperature-to-PWM curves.
 
 ## First Boot Debug
 
