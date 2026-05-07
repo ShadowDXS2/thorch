@@ -20,7 +20,6 @@ package() {
   chmod 755 "${pkgdir}/usr/bin/thorch-display-setup"
   chmod 755 "${pkgdir}/usr/bin/thorch-touchscreen-setup"
   chmod 755 "${pkgdir}/usr/bin/thorch-kwin-touch-map"
-  chmod 755 "${pkgdir}/usr/bin/thorch-rgb-ambient"
   chmod 755 "${pkgdir}/usr/bin/thorch-sessionctl"
   chmod 755 "${pkgdir}/usr/bin/thorch-session-recovery"
   chmod 755 "${pkgdir}/usr/bin/thorch-switch-session"

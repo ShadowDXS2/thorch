@@ -71,12 +71,3 @@ sudo thorch-rgb apply-config
 
 `thorch-rgb-battery.service` keeps battery-status mode updating when
 `THORCH_RGB_MODE=battery`.
-
-Ambient desktop-color mirroring is separate and experimental:
-
-```bash
-sudo systemctl start thorch-rgb-ambient.service
-```
-
-That service temporarily conflicts with battery mode because it repeatedly
-samples the desktop and sends temporary `thorch-rgb apply R G B` updates.
