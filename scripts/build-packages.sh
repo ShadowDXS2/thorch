@@ -473,5 +473,9 @@ done
 log "updating local pacman repository"
 prune_stale_repo_packages
 rm -f "${repo_dir}/thorch.db"* "${repo_dir}/thorch.files"*
-repo-add "${repo_dir}/thorch.db.tar.gz" "${repo_dir}"/*.pkg.tar.* >/dev/null
+shopt -s nullglob
+repo_packages=("${repo_dir}"/*.pkg.tar.*)
+shopt -u nullglob
+[[ "${#repo_packages[@]}" -gt 0 ]] || die "no packages available for repo-add in ${repo_dir}"
+repo-add "${repo_dir}/thorch.db.tar.gz" "${repo_packages[@]}" >/dev/null
 log "packages available in ${repo_dir}"
