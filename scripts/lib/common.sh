@@ -188,6 +188,13 @@ ensure_alarm_rootfs() {
     return
   fi
 
+  warn "cached Arch Linux ARM rootfs failed verification; redownloading ${rootfs_tar}"
+  rm -f "${rootfs_tar}" "${rootfs_tar}.sig"
+  download_alarm_rootfs "${rootfs_tar}"
+  if verify_alarm_rootfs "${rootfs_tar}"; then
+    return
+  fi
+
   die "failed to verify Arch Linux ARM rootfs; install/populate the Arch Linux ARM keyring or set ALARM_ROOTFS_SHA256"
 }
 
