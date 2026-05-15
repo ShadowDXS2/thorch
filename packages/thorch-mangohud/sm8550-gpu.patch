@@ -3,26 +3,106 @@ From: John Williams <porschemad911@gmail.com>
 Date: Tue, 12 May 2026 10:12:28 +1000
 Subject: [PATCH] SM8550 GPU
 
-Adapted for the MangoHud commit packaged by Thorch, where the MSM DRM
-module identifier is "msm".
+Adapted for the MangoHud commit packaged by Thorch. On Thor, the DRM render
+node reports "msm_dpu" while fdinfo reports "msm", GPU temperature lives in
+the gpuss hwmon sensors, and GPU clocks come from devfreq cur_freq.
 ---
- src/gpu_fdinfo.cpp | 4 ++--
- 1 file changed, 2 insertions(+), 2 deletions(-)
-
-diff --git a/src/gpu_fdinfo.cpp b/src/gpu_fdinfo.cpp
-index 7b6f776d..f08f8a36 100644
+--- a/src/gpu.h
++++ b/src/gpu.h
+@@ -45,7 +45,7 @@
+                 if (
+                     driver == "i915" || driver == "xe" ||
+                     driver == "panfrost" || driver == "panthor" ||
+-                    driver == "msm_dpu" || driver == "msm_drm"
++                    driver == "msm" || driver == "msm_dpu" || driver == "msm_drm"
+                 )
+                     fdinfo = std::make_unique<GPU_fdinfo>(driver, pci_dev, drm_node);
+         }
+@@ -200,8 +200,8 @@
+         std::string get_pci_device_address(const std::string& drm_card_path);
+         std::string get_driver(const std::string& node);
+ 
+-        const std::array<std::string, 8> supported_drivers = {
+-            "amdgpu", "nvidia", "i915", "xe", "panfrost", "panthor", "msm_dpu", "msm_drm"
++        const std::array<std::string, 9> supported_drivers = {
++            "amdgpu", "nvidia", "i915", "xe", "panfrost", "panthor", "msm", "msm_dpu", "msm_drm"
+         };
+ };
+ 
 --- a/src/gpu_fdinfo.cpp
 +++ b/src/gpu_fdinfo.cpp
-@@ -192,7 +192,7 @@ void GPU_fdinfo::find_hwmon_sensors()
+@@ -26,6 +26,9 @@
+     std::set<std::string> client_ids;
+     int total = 0;
+ 
++    const std::string fdinfo_driver =
++        module == "msm_dpu" || module == "msm_drm" ? "msm" : module;
++
+     for (const auto& entry : fs::directory_iterator(path)) {
+         auto fd_path = entry.path().string();
+         auto file = std::ifstream(fd_path);
+@@ -55,7 +58,7 @@
+                 client_id = val;
+         }
+ 
+-        if (!driver.empty() && driver == module) {
++        if (!driver.empty() && driver == fdinfo_driver) {
+             total++;
+             SPDLOG_TRACE(
+                 "driver = \"{}\", pdev = \"{}\", "
+@@ -67,7 +70,7 @@
+ 
+         if (
+             driver.empty() || client_id.empty() ||
+-            driver != module || pdev != pci_dev ||
++            driver != fdinfo_driver || pdev != pci_dev ||
+             client_ids.find(client_id) != client_ids.end()
+         )
+             continue;
+@@ -175,8 +178,8 @@
+ {
      std::string hwmon;
  
-     if (module == "msm")
+-    if (module == "msm")
 -        hwmon = find_hwmon_sensor_dir("gpu");
++    if (module == "msm" || module == "msm_dpu" || module == "msm_drm")
 +        hwmon = find_hwmon_sensor_dir("gpuss_0_thermal");
      else if (module == "panfrost" || module == "panthor")
          hwmon = find_hwmon_sensor_dir("gpu_thermal");
      else
-@@ -655,7 +655,7 @@ float GPU_fdinfo::amdgpu_helper_get_proc_vram() {
+@@ -371,8 +374,6 @@
+ {
+     if (module == "xe")
+         return get_xe_load();
+-    else if (module == "msm_drm")
+-        return get_kgsl_load();
+ 
+     uint64_t now = os_time_get_nano();
+     uint64_t gpu_time_now = get_gpu_time();
+@@ -539,6 +540,12 @@
+     if (module == "panfrost" || module == "panthor")
+         return get_gpu_clock_mali();
+ 
++    if (module == "msm" || module == "msm_dpu" || module == "msm_drm") {
++        std::string key = fdinfo_data.empty() ? "" : fdinfo_data[0]["drm-curfreq-gpu"];
++        if (!key.empty())
++            return std::lround(std::stoull(key) / 1000000.f);
++    }
++
+     if (!gpu_clock_stream.is_open())
+         return 0;
+ 
+@@ -551,6 +558,9 @@
+     if (clock_str.empty())
+         return 0;
+ 
++    if (module == "msm" || module == "msm_dpu" || module == "msm_drm")
++        return std::lround(std::stoull(clock_str) / 1000000.f);
++
+     return std::stoi(clock_str);
+ }
+ 
+@@ -637,33 +647,27 @@
  }
  
  void GPU_fdinfo::init_kgsl() {
@@ -31,6 +111,66 @@ index 7b6f776d..f08f8a36 100644
  
      try {
          if (!fs::exists(sys_path)) {
+-            SPDLOG_WARN("kgsl: {} is not found. kgsl stats will not work!", sys_path);
++            SPDLOG_WARN("msm: {} is not found. GPU clock stats will not work!", sys_path);
+             return;
+         }
+     } catch (fs::filesystem_error& ex) {
+-        SPDLOG_WARN("kgsl: {}", ex.what());
++        SPDLOG_WARN("msm: {}", ex.what());
+         return;
+     }
+ 
+-    for (std::string metric : {"gpu_busy_percentage", "temp", "clock_mhz" }) {
+-        std::string p = sys_path + "/" + metric;
+-
+-        if (!fs::exists(p)) {
+-            SPDLOG_WARN("kgsl: {} is not found", p);
+-            continue;
+-        }
+-
+-        SPDLOG_DEBUG("kgsl: {} found", p);
++    std::string p = sys_path + "/cur_freq";
+ 
+-        if (metric == "clock_mhz")
+-            gpu_clock_stream.open(p);
+-        else
+-            kgsl_streams[metric].open(p);
++    if (!fs::exists(p)) {
++        SPDLOG_WARN("msm: {} is not found", p);
++        return;
+     }
++
++    SPDLOG_DEBUG("msm: {} found", p);
++    gpu_clock_stream.open(p);
+ }
+ 
+ int GPU_fdinfo::get_kgsl_load() {
+@@ -737,10 +741,7 @@
+         metrics.CoreClock = get_gpu_clock();
+         metrics.voltage = hwmon_sensors["voltage"].val;
+ 
+-        if (module == "msm_drm")
+-            metrics.temp = get_kgsl_temp();
+-        else
+-            metrics.temp = hwmon_sensors["temp"].val / 1000.f;
++        metrics.temp = hwmon_sensors["temp"].val / 1000.f;
+ 
+         metrics.memory_temp = hwmon_sensors["vram_temp"].val / 1000.f;
+ 
+--- a/src/gpu_fdinfo.h
++++ b/src/gpu_fdinfo.h
+@@ -143,10 +143,9 @@
+         } else if (module == "amdgpu") {
+             drm_engine_type = "drm-engine-gfx";
+             drm_memory_type = "drm-memory-vram";
+-        } else if (module == "msm_dpu") {
++        } else if (module == "msm" || module == "msm_dpu" || module == "msm_drm") {
+             // msm driver does not report vram usage
+             drm_engine_type = "drm-engine-gpu";
+-        } else if (module == "msm_drm") {
+             init_kgsl();
+         } else if (module == "panfrost") {
+             drm_engine_type = "drm-engine-fragment";
 -- 
 2.47.3
-

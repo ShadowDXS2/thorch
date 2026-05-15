@@ -10,7 +10,7 @@ Subject: [PATCH] Qualcomm - battery - power_now
 diff --git a/src/battery.cpp b/src/battery.cpp
 --- a/src/battery.cpp
 +++ b/src/battery.cpp
-@@ -111,16 +111,7 @@
+@@ -111,16 +111,8 @@
              return 0.0f;
          }
  
@@ -24,7 +24,8 @@ diff --git a/src/battery.cpp b/src/battery.cpp
 -            continue;
 -        }
 -
-+        // Prefer current_now and voltage_now, but fall back to power_now (µW).
++        // Prefer current_now and voltage_now; some Qualcomm batteries expose
++        // unreliable power_now, so only use it as a µW fallback.
          if (fs::exists(current_now) && fs::exists(voltage_now)) {
              float i_ua = 0.0f;
              float v_uv = 0.0f;
@@ -37,7 +38,7 @@ diff --git a/src/battery.cpp b/src/battery.cpp
 +            std::ifstream input(power_now);
 +            std::string line;
 +            if (std::getline(input, line)) {
-+                power_w += std::fabs(stof(line)) / 10000000.0f;
++                power_w += std::fabs(stof(line)) / 1000000.0f;
 +            }
 +            continue;
 +        }
